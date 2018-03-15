@@ -10,7 +10,8 @@ import std.format : format;
 
 alias Symbol = Tuple!(string,"exchange",string,"name");
 
-alias Record = Tuple!(Symbol,"symbol",DateTime,"time",double,"open",double,"high",double,"low",double,"close",int,"volumn");
+alias Record = Tuple!(Symbol,"symbol",DateTime,"time",double,"open",
+                      double,"high",double,"low",double,"close",int,"volumn");
 
 auto get(string field) (Record rec) {
     mixin ("return rec." ~ field ~ ";");
@@ -86,6 +87,11 @@ auto between(T) (T data, DateTime start, DateTime end) {
                .filter!(a => a.time <= end);
 }
 
+auto at (Symbol s, DateTime time) {
+    return records.filter!(a => a.symbol==s && a.time == time).front;
+    assert (0);
+}
+
 auto getSymbols() {
     return records.map!(a => a.symbol).array.sort.uniq;
 }
@@ -104,6 +110,8 @@ auto ema(string field="close") (Symbol s, int period) {
 }
 
 enum Action {buy,sell}
+alias Trade = Tuple!(DateTime,"time",Action,"action",double,"price");
+
 auto macdStrat(string field="close") (Symbol s, int fastPeriod, int slowPeriod) {
     auto fast = s.ema!field (fastPeriod).retro;
     auto slow = s.sma!field (slowPeriod).retro;
@@ -115,13 +123,36 @@ auto macdStrat(string field="close") (Symbol s, int fastPeriod, int slowPeriod) 
     enum Fast=0;
     enum Slow=1;
 
-    if (rng.front[Fast].value >= rng.front[Slow].value) rng.until!(a => a[Fast].value < a[Slow].value);
+    Tuple!(DateTime,Action)[] actions;
+    while (true) {
+        auto slice = rng.take(2).array;
+        if (slice.count < 2) break;
 
-    foreach (pair; rng.chunks(3)){
+        if (slice[0][Fast].value >= slice[0][Slow].value) {
+            if (slice[1][Fast].value < slice[1][Slow].value) {
+                // sell
+                actions ~= Tuple!(DateTime,Action)(slice[1][Fast].time,Action.sell);
+            }
+        }
 
-        readln;
+        if (slice[0][Fast].value <= slice[0][Slow].value) {
+            if (slice[1][Fast].value > slice[1][Slow].value) {
+                // buy
+                actions ~= Tuple!(DateTime,Action)(slice[1][Fast].time,Action.buy);
+            }
+        }
+        rng.popFront;
+
     }
+    auto tmp = actions.sort!((a,b) => a[0] < b[0]);
+    if (tmp.front[1] == Action.sell) tmp.popFront;
+    if (tmp.back[1] == Action.buy) tmp.popBack;
 
 
+    return tmp.chunks(2).map!(a => tuple(Trade(a[0][0],Action.buy,s.at(a[0][0]).get!field),
+                                         Trade(a[1][0],Action.sell,s.at(a[1][0]).get!field)));
 }
 
+auto returns(T) (T trades) {
+    return trades.map!(a => a[1].price - a[0].price).sum;
+}
