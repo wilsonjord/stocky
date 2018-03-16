@@ -8,6 +8,8 @@ import std.algorithm;
 import std.range;
 import std.format : format;
 
+import dstats : mean;
+
 alias Symbol = Tuple!(string,"exchange",string,"name");
 
 alias Record = Tuple!(Symbol,"symbol",DateTime,"time",double,"open",
@@ -23,13 +25,13 @@ unittest {
 }
 
 private __gshared Record[] records;
-void stockyInit() {
+void stockyInit(string filePath) {
     import std.file : read;
     import std.concurrency;
     import std.parallelism;
     import core.atomic;
 
-    auto data = cast(string) `F:\stock-data\combined.csv`.read;
+    auto data = cast(string) filePath.read;
     shared int lineCount=0;
     auto l = data.length/2;
     foreach (slice; [data[0..l],data[l..$]].parallel) {
@@ -97,15 +99,24 @@ auto getSymbols() {
 }
 
 alias ReturnType = Tuple!(DateTime,"time",double,"value");
-auto sma(string field) (Symbol s, int period) {
-    import dstats : mean;
 
+auto sma(string field="close") (Symbol s, int period) {
     auto data = records.filter!(a => a.symbol==s).array.sort!((a,b) => a.time > b.time);
+    return data.sma!field (period);
+    //return data.map!(a => ReturnType (a.time,data.find!(b => b.time==a.time).take(period).map!(c => c.get!field).mean));
+}
+
+auto sma(string field="close",T) (T data, int period){
     return data.map!(a => ReturnType (a.time,data.find!(b => b.time==a.time).take(period).map!(c => c.get!field).mean));
 }
 
 auto ema(string field="close") (Symbol s, int period) {
     auto data = records.filter!(a => a.symbol==s).array.sort!((a,b) => a.time > b.time);
+    return data.ema!field(period);
+    //return data.enumerate.map!(a => ReturnType(a.value.time,data.drop(a.index).retro.map!(c => c.get!field).fold!((a,b) => a+(2.0/(period+1))*(b-a))));
+}
+
+auto ema(string field="close", T) (T data, int period) {
     return data.enumerate.map!(a => ReturnType(a.value.time,data.drop(a.index).retro.map!(c => c.get!field).fold!((a,b) => a+(2.0/(period+1))*(b-a))));
 }
 
