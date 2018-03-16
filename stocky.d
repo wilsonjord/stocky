@@ -146,6 +146,7 @@ auto macdStrat(string field="close") (Symbol s, int fastPeriod, int slowPeriod) 
             }
         }
 
+
         if (slice[0][Fast].value <= slice[0][Slow].value) {
             if (slice[1][Fast].value > slice[1][Slow].value) {
                 // buy
