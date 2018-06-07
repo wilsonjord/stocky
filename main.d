@@ -20,7 +20,7 @@ void main(){
     import std.csv;
     import std.file : readText;
 
-    auto records = File("appl.csv","r")
+    auto records = File(`F:\stock-data\full\ASX-WLL.csv`,"r")
                        .byLine
                        .drop(1) // ignore header
                        .map!(a => a.splitter(",").array)
@@ -51,14 +51,16 @@ void main(){
 //        .writeln;
 
 
-    auto fast = records.ema!"close"(50);
-    auto slow = records.sma!"close"(200);
-    auto signalLine = zip(fast,slow).map!(a => a[0]-a[1]).ema(50);
+    auto fast = records.ema!"close"(7);
+    auto slow = records.ema!"close"(139);
+    auto signalLine = zip(fast,slow).map!(a => a[0]-a[1]).ema(6);
 
     auto signals = zip(fast,slow,signalLine).map!(a => tuple!("fast","slow","signal")(a[0],a[1],a[2]))
-                                            .signals;
+                                            .signals
+                                            .zip(records.map!(a => a.time));
+    signals.filter!(a => a[0][0]!="none")
+           .each!(a => writeln (a[0]," ",a[1]));
 
-    signals.take(10).each!(a => a.writeln);
     //macd(records.ema!"close"(50),records.map!(a => a.close).sma(200));
 
     // [1,2,3,4].macd2(1,1,1).writeln; / error

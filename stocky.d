@@ -505,39 +505,59 @@ auto macd(PriceType priceType=PriceType.close,Flag!"consectutiveDays" flag=No.co
     return completeTrades;
 }
 
+auto isBuy(Flag!"consectutiveDays" flag=No.consectutiveDays,T) (T data) {
+    static if (flag==Yes.consectutiveDays) {
+        return data[0].signal <= (data[0].fast-data[0].slow) && data[1].signal <= (data[1].fast-data[1].slow) && data.signal > (data.fast-data.slow) && data.signal > (data.fast-data.slow);
+    } else {
+        return data[0].signal <= (data[0].fast-data[0].slow) && data[1].signal > (data[1].fast-data[1].slow);
+    }
+}
+
+auto isSell(Flag!"consectutiveDays" flag=No.consectutiveDays,T) (T data) {
+    static if (flag==Yes.consectutiveDays) {
+        return data.signal >= (data.fast-data.slow) && data.signal >= (data.fast-data.slow) && data.signal < (data.fast-data.slow) && data.signal < (data.fast-data.slow);
+    } else {
+        return data[0].signal >= (data[0].fast-data[0].slow) && data[1].signal < (data[1].fast-data[1].slow);
+    }
+}
+
 auto signals(Flag!"consectutiveDays" flag=No.consectutiveDays, Range) (Range rng) {
     struct Signal {
         Range rng;
-        import std.functional : unaryFun;
         static if (flag==Yes.consectutiveDays) {
             auto windowSize=4;
-            alias isBuy =  unaryFun!("a[0].signal <= (a[0].fast-a[0].slow) && a[1].signal <= (a[1].fast-a[1].slow) && a[2].signal > (a[2].fast-a[2].slow) && a[3].signal > (a[3].fast-a[3].slow)");
-            alias isSell =  unaryFun!("a[0].signal >= (a[0].fast-a[0].slow) && a[1].signal >= (a[1].fast-a[1].slow) && a[2].signal < (a[2].fast-a[2].slow) && a[3].signal < (a[3].fast-a[3].slow)");
         } else {
             auto windowSize=2;
-            alias isBuy =  unaryFun!("a[0].signal <= (a[0].fast-a[0].slow) && a[1].signal > (a[1].fast-a[1].slow)");
-            alias isSell =  unaryFun!("a[0].signal >= (a[0].fast-a[0].slow) && a[1].signal < (a[1].fast-a[1].slow)");
         }
+
+        import std.container : DList;
+        DList!(ElementType!Range) buffer;
+
 
         this (Range r) {
             rng = r;
+            foreach (e; rng.take(windowSize)) buffer.insert(e);
+            rng.popFrontN(windowSize/2);
         }
 
-        auto front() { return rng.front; }
+        auto front() {
+            auto tmp = buffer.array;
+            if (tmp.isBuy!flag) {
+                return tuple("buy",rng.front);
+            } else if (tmp.isSell!flag) {
+                return tuple("sell",rng.front);
+            } else {
+                return tuple("none",rng.front);
+            }
+        }
+
         auto empty() { return rng.take(windowSize).count < windowSize; }
 
         void popFront() {
-            // advance to next buy or sell
-            while (true) {
-                if (empty) break;
-
-                auto slice = rng.take(windowSize).array;
-                if (isBuy(slice) || isSell(slice)) {
-                    rng.popFrontN(windowSize/2);
-                    break;
-                } else {
-                    rng.popFront;
-                }
+            rng.popFront;
+            if (!rng.empty) {
+                buffer.insert(rng.front);
+                buffer.removeFront;
             }
         }
     }
