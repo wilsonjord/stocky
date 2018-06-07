@@ -86,18 +86,19 @@ auto createSMA(T) (T rng, int period) {
 
 /++
     Params:
-        pred = Optional predicate
+        field = define what member to use for calculation
         rng = InputRange
         period = number of time periods to average
 
     Returns:
         A range of simple moving averages
 +/
-auto sma(alias pred = a => a.close, Range) (Range rng, int period) {
-    static if (isNumeric!(ElementType!Range)) {
-        return createSMA(rng,period);
+auto sma(string field="", Range) (Range rng, int period) {
+    static if (!field.empty) {
+        static assert (hasMember!(ElementType!Range,field));
+        mixin ("return createSMA(rng.map!(a => a." ~ field ~ "),period);");
     } else {
-        return createSMA(rng.map!pred,period);
+        return createSMA(rng,period);
     }
 }
 
@@ -113,7 +114,7 @@ unittest {
     assert (b[2].approxEqual((25+85+65) / 3.0));
     assert (b[3].approxEqual(65));
 
-    // using EODRecord
+    // using user type
     auto c = [EODRecord(DateTime(2000,1,1,0,0,0),
                         11,     // open
                         15,     // high
@@ -133,13 +134,17 @@ unittest {
                         15,
                         1)];
 
-    assert (c.sma(3)    // uses close by default
+    assert (c.sma!"close"(3)
              .drop(2)
              .front.approxEqual(14));
 
-    assert (c.sma!(a => a.open)(3)
+    assert (c.sma!"open"(3)
              .drop(2)
              .front.approxEqual ((11+12+11) / 3.0));
+
+    assert (c.map!(a => a.open).sma(3).equal
+           (c.sma!"open"(3)));
+
 }
 
 auto createEMA(T) (T rng, int period, double seed) {
@@ -176,12 +181,13 @@ import std.typecons : Nullable;
     Returns:
         A range of exponential moving averages
 +/
-auto ema(alias pred = a => a.close, Range) (Range rng, int period, double seed = double.init) {
+auto ema(string field="", Range) (Range rng, int period, double seed = double.init) {
     import std.math : isNaN;
-    static if (isNumeric!(ElementType!Range)) {
-        return createEMA(rng, period, seed.isNaN ? rng.front : seed);
+    static if (!field.empty) {
+        static assert (hasMember!(ElementType!Range,field));
+        mixin ("return createEMA(rng.map!(a => a." ~ field ~ "),period,seed.isNaN ? rng.map!(a => a." ~ field ~ ").front : seed);");
     } else {
-        return createEMA(rng.map!pred, period, seed.isNaN ? rng.map!pred.front : seed);
+        return createEMA(rng, period, seed.isNaN ? rng.front : seed);
     }
 }
 
@@ -203,6 +209,11 @@ unittest {
     auto b = [22.81,23.09,22.91,23.23,22.83,23.05,23.02,23.29,23.41,23.49,24.6,24.63,24.51,23.73,23.31,23.53,23.06,23.25,23.12,22.8,22.84];
     assert (b.ema(9)
              .approxEqual([22.81,22.87,22.87,22.95,22.92,22.95,22.96,23.03,23.1,23.18,23.47,23.7,23.86,23.83,23.73,23.69,23.56,23.5,23.42,23.3,23.21]));
+
+    auto c = iota(1,100).map!(a => tuple!("index","value")(a,a));
+    assert (c.ema!"value"(10)
+             .drop(9)
+             .take(3).approxEqual([6.24,7.10,7.99]));
 }
 
 auto toDateTime (string s) {
@@ -406,6 +417,40 @@ auto macdActions (PriceType priceType=PriceType.close,Flag!"consectutiveDays" fl
 
 }
 
+//auto macd(Flag!"consectutiveDays" flag=No.consectutiveDays, FastRange, SlowRange)
+//         (FastRange fastRng, SlowRange slowRng) if (isInputRange!FastRange && isInputRange!SlowRange) {
+//
+//    static if (flag) {
+//        return macd!(Yes.consectutiveDays)(fastRng,slowRng,fastRng.count);
+//    } else {
+//        return macd!(No.consectutiveDays)(fastRng,slowRng,fastRng.count);
+//    }
+//}
+
+auto macd(FastRange, SlowRange) (FastRange fast, SlowRange slow) {
+    return zip(fast,slow).map!(a => a[0]-a[1]);
+}
+
+//auto macd(Flag!"consectutiveDays" flag=No.consectutiveDays, FastRange, SlowRange)
+//         (FastRange fastRng, SlowRange slowRng, int signalPeriod) if (isInputRange!FastRange && isInputRange!SlowRange) {
+//
+//    import std.functional : unaryFun;
+//    static if (flag==Yes.consectutiveDays) {
+//        auto windowSize=4;
+//        alias isBuy =  unaryFun!("a[0].signal <= a[0].line && a[1].signal <= a[1].line && a[2].signal > a[2].line && a[3].signal > a[3].line");
+//        alias isSell = unaryFun!("a[0].signal >= a[0].line && a[1].signal >= a[1].line && a[2].signal < a[2].line && a[3].signal < a[3].line");
+//    } else {
+//        auto windowSize=2;
+//        alias isBuy = unaryFun!("a[0].signal <= a[0].line && a[1].signal > a[1].line");
+//        alias isSell = unaryFun!("a[0].signal >= a[0].line && a[1].signal < a[1].line");
+//    }
+//
+//    auto macd = zip(fastRng,slowRng).map!(a => a[0]-a[1]);
+//    //auto signal = macd.
+//
+//    return 0;
+//}
+
 auto macd(PriceType priceType=PriceType.close,Flag!"consectutiveDays" flag=No.consectutiveDays, Range)
          (Range records, int fastPeriod, int slowPeriod, int signalPeriod, string outputFile="") if (isInputRange!Range) {
 
@@ -458,67 +503,79 @@ auto macd(PriceType priceType=PriceType.close,Flag!"consectutiveDays" flag=No.co
 
 
     return completeTrades;
-
-//    if (outputFile) {
-//        auto file = File (outputFile,"w");
-//        file.writeln ("Fast,Slow,Signal,Action,Price");
-//        foreach (trade; completeTrades) {
-//            file.writeln (trade[0].time.date.toISOExtString,",",trade[0].action,",",trade[0].price);
-//            file.writeln (trade[1].time.date.toISOExtString,",",trade[1].action,",",trade[1].price);
-//        }
-//        //completeTrades.each!(a => file.writeln(a));
-//    }
-//
-//    return rvalue;
-//
-//    //readln;
-//
-//    // time analysed
-//    rvalue.duration = timeSeries.back.time - timeSeries.front.time;
-//
-//    // num trades
-//    rvalue.count = completeTrades.count.to!int;
-//
-//    alias profitablePred = a => a[0].price < a[1].price;
-//    alias lossPred = a => a[0].price > a[1].price;
-//
-//    // winning trades
-//    rvalue.winRate = completeTrades.count!profitablePred / rvalue.count.to!double;
-//
-//    // gross profit
-//    rvalue.grossInfo.profit = completeTrades.filter!profitablePred
-//                                            .map!(a => a[1].price - a[0].price)
-//                                            .sum;
-//
-//    // gross loss
-//    import std.math : abs;
-//    rvalue.grossInfo.loss = completeTrades.filter!lossPred
-//                                          .map!(a => abs(a[1].price - a[0].price))
-//                                          .sum;
-//
-//    // total net profit percentage
-//    rvalue.netPercent = completeTrades.map!(a => (a[1].price - a[0].price) / a[0].price)
-//                                      .sum;
-//
-//    // profit % per trade
-//    rvalue.profitPerTrade.mean = completeTrades.map!(a => (a[1].price - a[0].price) / a[0].price).mean;
-//    rvalue.profitPerTrade.median = completeTrades.map!(a => (a[1].price - a[0].price) / a[0].price).median;
-//
-//    // percentile range
-//    auto numPercentileElements = (rvalue.count * 0.05).to!int; // truncation ok
-//    rvalue.grossInfo.adjustedProfit = completeTrades.dropExactly(numPercentileElements)
-//                                                    .dropBackExactly(numPercentileElements)
-//                                                    .filter!profitablePred
-//                                                    .map!(a => a[1].price - a[0].price)
-//                                                    .sum;
-//
-//    rvalue.grossInfo.adjustedLoss = completeTrades.dropExactly(numPercentileElements)
-//                                                  .dropBackExactly(numPercentileElements)
-//                                                  .filter!lossPred
-//                                                  .map!(a => abs(a[1].price - a[0].price))
-//                                                  .sum;
-//
-//    return rvalue;
 }
 
+auto signals(Flag!"consectutiveDays" flag=No.consectutiveDays, Range) (Range rng) {
+    struct Signal {
+        Range rng;
+        import std.functional : unaryFun;
+        static if (flag==Yes.consectutiveDays) {
+            auto windowSize=4;
+            alias isBuy =  unaryFun!("a[0].signal <= (a[0].fast-a[0].slow) && a[1].signal <= (a[1].fast-a[1].slow) && a[2].signal > (a[2].fast-a[2].slow) && a[3].signal > (a[3].fast-a[3].slow)");
+            alias isSell =  unaryFun!("a[0].signal >= (a[0].fast-a[0].slow) && a[1].signal >= (a[1].fast-a[1].slow) && a[2].signal < (a[2].fast-a[2].slow) && a[3].signal < (a[3].fast-a[3].slow)");
+        } else {
+            auto windowSize=2;
+            alias isBuy =  unaryFun!("a[0].signal <= (a[0].fast-a[0].slow) && a[1].signal > (a[1].fast-a[1].slow)");
+            alias isSell =  unaryFun!("a[0].signal >= (a[0].fast-a[0].slow) && a[1].signal < (a[1].fast-a[1].slow)");
+        }
 
+        this (Range r) {
+            rng = r;
+        }
+
+        auto front() { return rng.front; }
+        auto empty() { return rng.take(windowSize).count < windowSize; }
+
+        void popFront() {
+            // advance to next buy or sell
+            while (true) {
+                if (empty) break;
+
+                auto slice = rng.take(windowSize).array;
+                if (isBuy(slice) || isSell(slice)) {
+                    rng.popFrontN(windowSize/2);
+                    break;
+                } else {
+                    rng.popFront;
+                }
+            }
+        }
+    }
+    return Signal(rng);
+}
+
+//struct SMA(Range) if (isNumeric!(ElementType!Range)) {
+//        Range rng;
+//        double period;
+//
+//        import std.container : DList;
+//        DList!(ElementType!Range) buffer;
+//
+//        double currentResult;
+//        this (Range r, int p) {
+//            rng=r;
+//            period=p;
+//            currentResult=r.front;
+//
+//            // prepopulate buffer
+//            buffer.insert (r.front.repeat(p));
+//        }
+//
+//        auto front() {
+//            return currentResult;
+//        }
+//
+//        auto popFront() {
+//            rng.popFront;
+//            if (!rng.empty){
+//                currentResult = currentResult + (rng.front / period) - (buffer.back / period);
+//                buffer.insertFront (rng.front);
+//                buffer.removeBack;
+//            }
+//        }
+//
+//        auto empty() {
+//            return rng.empty;
+//        }
+//    }
+//    return SMA!T (rng,period);
