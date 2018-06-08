@@ -216,32 +216,19 @@ unittest {
              .take(3).approxEqual([6.24,7.10,7.99]));
 }
 
-auto toDateTime (string s) {
-    if (s.canFind("T")){
-        return DateTime.fromISOString (s);
-    } else {
-        return Date.fromISOString(s).to!DateTime;
-    }
-}
-
-auto between(Range) (Range records, string startDate, string endDate) {
-    return records.filter!(a => a.time >= startDate.toDateTime)
-                  .filter!(a => a.time <= endDate.toDateTime);
-}
-
-auto profit (double start, double end) {
-    // returns profit as a percentage of start
+auto result (double start, double end) {
+    // returns result as a percentage of start
     return (end - start) / start;
 }
 
-auto profit(T) (in T p) pure {
+auto result(T) (in T p) pure {
     assert (p.count == 2);
-    return profit(p.front.price,p.back.price);
+    return result(p.front.price,p.back.price);
 }
 
-auto profits(T) (in T trades) pure {
+auto results(T) (in T trades) pure {
     return trades.chunks(2)
-                 .map!(a => a.profit);
+                 .map!(a => a.result);
 }
 
 auto daysHeld(T) (in T trades) pure {
@@ -308,7 +295,9 @@ auto wins(T) (T profitRange) pure {
 }
 
 auto losses(T) (T profitRange) pure {
-    return profitRange.filter!(a => a < 0);
+    import std.math : abs;
+    return profitRange.filter!(a => a < 0)
+                      .map!(a => a.abs);
 }
 
 auto weighted(T) (T profitRange) pure {
@@ -317,285 +306,20 @@ auto weighted(T) (T profitRange) pure {
                        .sum / iota(1,profitRange.count+1).sum;
 }
 
-auto avgTradingVolumn(Range) (Range rng, int period) {
-    return rng.retro.take(period).map!(a => a.get!"volumn").mean;
-}
+enum Action {buy,sell,none}
 
-alias GrossInfo = Tuple!(double,"profit",
-                         double,"loss",
-                         double,"adjustedProfit",
-                         double,"adjustedLoss");
-
-alias StrategyResult = Tuple!(Duration,"duration",
-                            int,"count",
-                            double,"winRate",
-                            GrossInfo,"grossInfo",
-                            double,"netPercent",
-                            Tuple!(double,"mean",double,"median"),"profitPerTrade");
-
-auto profit (StrategyResult t) {
-    Tuple!(double,"gross",double,"net",double,"netPercent",Tuple!(double,"mean",double,"median"),"perTrade",double,"factor", double,"adjustedFactor") rvalue;
-    rvalue.gross = t.grossInfo.profit;
-    rvalue.net = t.grossInfo.profit-t.grossInfo.loss;
-    rvalue.netPercent = t.netPercent;
-    rvalue.perTrade = t.profitPerTrade;
-    rvalue.factor = t.grossInfo.profit / t.grossInfo.loss;
-    rvalue.adjustedFactor = t.grossInfo.adjustedProfit / t.grossInfo.adjustedLoss;
-
-    return rvalue;
-}
-
-void macdStats(PriceType priceType=PriceType.close,Flag!"consectutiveDays" flag=No.consectutiveDays, Range)
-         (Range records, int fastPeriod, int slowPeriod, int signalPeriod, string outputFile="") if (isInputRange!Range) {
-
-    import std.functional : unaryFun;
-    static if (flag==Yes.consectutiveDays) {
-        auto windowSize=4;
-        alias isBuy =  unaryFun!("a[0].signal <= a[0].line && a[1].signal <= a[1].line && a[2].signal > a[2].line && a[3].signal > a[3].line");
-        alias isSell = unaryFun!("a[0].signal >= a[0].line && a[1].signal >= a[1].line && a[2].signal < a[2].line && a[3].signal < a[3].line");
-    } else {
-        auto windowSize=2;
-        alias isBuy = unaryFun!("a[0].signal <= a[0].line && a[1].signal > a[1].line");
-        alias isSell = unaryFun!("a[0].signal >= a[0].line && a[1].signal < a[1].line");
-    }
-
-    StrategyResult rvalue;
-
-    auto times = records.map!(a => a.time);
-    auto closes = records.map!(a => a.get!priceType);
-    auto slow = closes.ema(slowPeriod);
-    auto fast = closes.ema(fastPeriod);
-    auto macd = zip(fast,slow).map!(a => a[0]-a[1]);
-    auto signal = macd.ema(signalPeriod);
-
-    auto file = File("output2.csv","w");
-    foreach (timePoint; zip(times,macd,signal)){
-        file.writeln (timePoint[0],",",timePoint[1],",",timePoint[2]);
-    }
-}
-
-enum Action {buy,sell}
 alias Trade = Tuple!(DateTime,"time",double,"price",Action,"action");
 
-auto macdActions (PriceType priceType=PriceType.close,Flag!"consectutiveDays" flag=No.consectutiveDays, Range)
-         (Range records, int fastPeriod, int slowPeriod, int signalPeriod, string outputFile="") if (isInputRange!Range) {
-
-    import std.functional : unaryFun;
-    static if (flag==Yes.consectutiveDays) {
-        auto windowSize=4;
-        alias isBuy =  unaryFun!("a[0].signal <= a[0].line && a[1].signal <= a[1].line && a[2].signal > a[2].line && a[3].signal > a[3].line");
-        alias isSell = unaryFun!("a[0].signal >= a[0].line && a[1].signal >= a[1].line && a[2].signal < a[2].line && a[3].signal < a[3].line");
-    } else {
-        auto windowSize=2;
-        alias isBuy = unaryFun!("a[0].signal <= a[0].line && a[1].signal > a[1].line");
-        alias isSell = unaryFun!("a[0].signal >= a[0].line && a[1].signal < a[1].line");
+auto completedOnly(Range) (Range trades) {
+    if (trades.empty) return trades;
+    if (trades.front.action==Action.sell) {
+        trades.popFront;
     }
 
-    StrategyResult rvalue;
-
-    auto times = records.map!(a => a.time);
-    auto closes = records.map!(a => a.get!priceType);
-    auto slow = closes.ema(slowPeriod);
-    auto fast = closes.ema(fastPeriod);
-    auto macd = zip(fast,slow).map!(a => a[0]-a[1]);
-    auto signal = macd.ema(signalPeriod);
-
-    auto timeSeries = zip(times,closes,macd,signal)
-                          .map!(a => Tuple!(DateTime,"time",
-                                            double,"price",
-                                            double,"line",
-                                            double,"signal")(a.expand))
-                          .array
-                          .slide!(No.withPartial)(windowSize)
-                          .filter!(a => isBuy(a) || isSell(a))
-                          .map!(a => Trade(a.back.time,a.back.price,(isBuy(a)) ? Action.buy : Action.sell))
-                          .array;
-
-    return timeSeries;
-    //return timeSeries.retro.take(2).array;
-
-
-}
-
-//auto macd(Flag!"consectutiveDays" flag=No.consectutiveDays, FastRange, SlowRange)
-//         (FastRange fastRng, SlowRange slowRng) if (isInputRange!FastRange && isInputRange!SlowRange) {
-//
-//    static if (flag) {
-//        return macd!(Yes.consectutiveDays)(fastRng,slowRng,fastRng.count);
-//    } else {
-//        return macd!(No.consectutiveDays)(fastRng,slowRng,fastRng.count);
-//    }
-//}
-
-auto macd(FastRange, SlowRange) (FastRange fast, SlowRange slow) {
-    return zip(fast,slow).map!(a => a[0]-a[1]);
-}
-
-//auto macd(Flag!"consectutiveDays" flag=No.consectutiveDays, FastRange, SlowRange)
-//         (FastRange fastRng, SlowRange slowRng, int signalPeriod) if (isInputRange!FastRange && isInputRange!SlowRange) {
-//
-//    import std.functional : unaryFun;
-//    static if (flag==Yes.consectutiveDays) {
-//        auto windowSize=4;
-//        alias isBuy =  unaryFun!("a[0].signal <= a[0].line && a[1].signal <= a[1].line && a[2].signal > a[2].line && a[3].signal > a[3].line");
-//        alias isSell = unaryFun!("a[0].signal >= a[0].line && a[1].signal >= a[1].line && a[2].signal < a[2].line && a[3].signal < a[3].line");
-//    } else {
-//        auto windowSize=2;
-//        alias isBuy = unaryFun!("a[0].signal <= a[0].line && a[1].signal > a[1].line");
-//        alias isSell = unaryFun!("a[0].signal >= a[0].line && a[1].signal < a[1].line");
-//    }
-//
-//    auto macd = zip(fastRng,slowRng).map!(a => a[0]-a[1]);
-//    //auto signal = macd.
-//
-//    return 0;
-//}
-
-auto macd(PriceType priceType=PriceType.close,Flag!"consectutiveDays" flag=No.consectutiveDays, Range)
-         (Range records, int fastPeriod, int slowPeriod, int signalPeriod, string outputFile="") if (isInputRange!Range) {
-
-    import std.functional : unaryFun;
-    static if (flag==Yes.consectutiveDays) {
-        auto windowSize=4;
-        alias isBuy =  unaryFun!("a[0].signal <= a[0].line && a[1].signal <= a[1].line && a[2].signal > a[2].line && a[3].signal > a[3].line");
-        alias isSell = unaryFun!("a[0].signal >= a[0].line && a[1].signal >= a[1].line && a[2].signal < a[2].line && a[3].signal < a[3].line");
-    } else {
-        auto windowSize=2;
-        alias isBuy = unaryFun!("a[0].signal <= a[0].line && a[1].signal > a[1].line");
-        alias isSell = unaryFun!("a[0].signal >= a[0].line && a[1].signal < a[1].line");
+    if (trades.back.action==Action.buy) {
+        trades.popBack;
     }
-
-    Trade[][] rvalue;
-
-    if (records.count < 2) return rvalue;
-
-    auto times = records.map!(a => a.time);
-    auto closes = records.map!(a => a.get!priceType);
-    auto slow = closes.ema(slowPeriod);
-    auto fast = closes.ema(fastPeriod);
-    auto macd = zip(fast,slow).map!(a => a[0]-a[1]);
-    auto signal = macd.ema(signalPeriod);
-
-    auto timeSeries = zip(times,closes,macd,signal)
-                          .map!(a => Tuple!(DateTime,"time",
-                                            double,"price",
-                                            double,"line",
-                                            double,"signal")(a.expand))
-                          .array;
-
-
-
-    Trade[] trades;
-    trades.reserve(400);
-    foreach (timeSlice; timeSeries.slide!(No.withPartial)(windowSize)) {
-        if (isBuy(timeSlice) && (trades.empty || trades.back.action==Action.sell)) {
-            trades ~= Trade(timeSlice.back.time,timeSlice.back.price,Action.buy);
-        } else if (isSell(timeSlice) && (trades.empty || trades.back.action==Action.buy)) {
-            trades ~= Trade(timeSlice.back.time,timeSlice.back.price,Action.sell);
-        }
-    }
-
-    auto completeTrades = trades.find!(a => a.action==Action.buy)
-                                .slide!(No.withPartial)(2,2)
-                                .array
-                                .sort!((a,b) => a[1].price-a[0].price < b[1].price-b[0].price)
-                                .array;
-
-
-    return completeTrades;
+    return trades;
 }
 
-auto isBuy(Flag!"consectutiveDays" flag=No.consectutiveDays,T) (T data) {
-    static if (flag==Yes.consectutiveDays) {
-        return data[0].signal <= (data[0].fast-data[0].slow) && data[1].signal <= (data[1].fast-data[1].slow) && data.signal > (data.fast-data.slow) && data.signal > (data.fast-data.slow);
-    } else {
-        return data[0].signal <= (data[0].fast-data[0].slow) && data[1].signal > (data[1].fast-data[1].slow);
-    }
-}
 
-auto isSell(Flag!"consectutiveDays" flag=No.consectutiveDays,T) (T data) {
-    static if (flag==Yes.consectutiveDays) {
-        return data.signal >= (data.fast-data.slow) && data.signal >= (data.fast-data.slow) && data.signal < (data.fast-data.slow) && data.signal < (data.fast-data.slow);
-    } else {
-        return data[0].signal >= (data[0].fast-data[0].slow) && data[1].signal < (data[1].fast-data[1].slow);
-    }
-}
-
-auto signals(Flag!"consectutiveDays" flag=No.consectutiveDays, Range) (Range rng) {
-    struct Signal {
-        Range rng;
-        static if (flag==Yes.consectutiveDays) {
-            auto windowSize=4;
-        } else {
-            auto windowSize=2;
-        }
-
-        import std.container : DList;
-        DList!(ElementType!Range) buffer;
-
-
-        this (Range r) {
-            rng = r;
-            foreach (e; rng.take(windowSize)) buffer.insert(e);
-            rng.popFrontN(windowSize/2);
-        }
-
-        auto front() {
-            auto tmp = buffer.array;
-            if (tmp.isBuy!flag) {
-                return tuple("buy",rng.front);
-            } else if (tmp.isSell!flag) {
-                return tuple("sell",rng.front);
-            } else {
-                return tuple("none",rng.front);
-            }
-        }
-
-        auto empty() { return rng.take(windowSize).count < windowSize; }
-
-        void popFront() {
-            rng.popFront;
-            if (!rng.empty) {
-                buffer.insert(rng.front);
-                buffer.removeFront;
-            }
-        }
-    }
-    return Signal(rng);
-}
-
-//struct SMA(Range) if (isNumeric!(ElementType!Range)) {
-//        Range rng;
-//        double period;
-//
-//        import std.container : DList;
-//        DList!(ElementType!Range) buffer;
-//
-//        double currentResult;
-//        this (Range r, int p) {
-//            rng=r;
-//            period=p;
-//            currentResult=r.front;
-//
-//            // prepopulate buffer
-//            buffer.insert (r.front.repeat(p));
-//        }
-//
-//        auto front() {
-//            return currentResult;
-//        }
-//
-//        auto popFront() {
-//            rng.popFront;
-//            if (!rng.empty){
-//                currentResult = currentResult + (rng.front / period) - (buffer.back / period);
-//                buffer.insertFront (rng.front);
-//                buffer.removeBack;
-//            }
-//        }
-//
-//        auto empty() {
-//            return rng.empty;
-//        }
-//    }
-//    return SMA!T (rng,period);
