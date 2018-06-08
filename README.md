@@ -68,3 +68,5 @@ average win (%): 17.87
 average loss (%): 28.80
 profit factor: 1.65
 ```
+
+Pipeline type processing used above for illustration purposes, good old for loops will work just as well.
