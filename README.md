@@ -11,6 +11,7 @@ Stocky is a library to help construct and testing stock trading stratigies (back
 
 ```d
 import stocky;
+import dstats : mean;
 
 auto records = File(`appl.csv`,"r")
                    .byLine
