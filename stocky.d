@@ -306,6 +306,25 @@ auto weighted(T) (T profitRange) pure {
                        .sum / iota(1,profitRange.count+1).sum;
 }
 
+auto staticInvest(T) (in T trades, double invest, double brokerage=0) pure {
+    auto rvalue=0.0;
+    foreach (pair; trades.chunks(2)) {
+        auto buyTrade = pair[0];
+        auto sellTrade = pair[1];
+
+        // buy
+        import std.math : floor;
+        auto bought = floor(invest / buyTrade.price);
+        rvalue -= bought * buyTrade.price;
+        rvalue -= brokerage;
+
+        // sell
+        rvalue += bought*sellTrade.price;
+        rvalue -= brokerage;
+    }
+    return rvalue;
+}
+
 enum Action {buy,sell,none}
 
 alias Trade = Tuple!(DateTime,"time",double,"price",Action,"action");
@@ -319,7 +338,14 @@ auto completedOnly(Range) (Range trades) {
     if (trades.back.action==Action.buy) {
         trades.popBack;
     }
+
+    if (trades.count % 2 != 0) {
+        writeln ("error: ",trades.count);
+        foreach (trade; trades) writeln (trade);
+        readln;
+    }
+
+    assert (trades.count % 2 == 0);
     return trades;
 }
-
 
