@@ -21,30 +21,14 @@ import std.traits;
 
 import dstats : mean, median;
 
+version(unittest) import std.math : approxEqual;
+
 alias Symbol = Tuple!(string,"exchange",string,"name");
-alias Record = Tuple!(Symbol,"symbol",DateTime,"time",
-                      double,"open",double,"high",double,"low",double,"close",int,"volumn");
 
 /++
     Main data type to store EOD data for a stock
 +/
 alias EODRecord = Tuple!(DateTime,"time",double,"open",double,"high",double,"low",double,"close",int,"volumn");
-
-enum PriceType {open="open",high="high",low="low",close="close"}
-
-auto get(PriceType pt) (Record rec) {
-    return rec.get!(cast(string)pt);
-}
-
-auto get(string field) (Record rec) {
-    mixin ("return rec." ~ field ~ ";");
-}
-
-unittest {
-    auto a = Record (Symbol("ABC","ABC"),DateTime.init,1,2,3,4,5);
-    assert (a.get!(PriceType.close)==4);
-    assert (a.get!"volumn"==5);
-}
 
 auto createSMA(T) (T rng, int period) {
     struct SMA(Range) if (isNumeric!(ElementType!Range)) {
@@ -91,7 +75,7 @@ auto createSMA(T) (T rng, int period) {
         period = number of time periods to average
 
     Returns:
-        A range of simple moving averages
+        A simple moving average range
 +/
 auto sma(string field="", Range) (Range rng, int period) {
     static if (!field.empty) {
@@ -108,7 +92,6 @@ unittest {
     auto a = [25,85,65,45,95,75,15,35];
     auto b = a.sma(3).array;
 
-    import std.math : approxEqual;
     assert (b[0]==25);
     assert (b[1].approxEqual((25+25+85) / 3.0));
     assert (b[2].approxEqual((25+85+65) / 3.0));
@@ -169,17 +152,15 @@ auto createEMA(T) (T rng, int period, double seed) {
     return EMA!T (rng,period,seed);
 }
 
-import std.typecons : Nullable;
-
 /++
     Params:
-        pred = Optional predicate
+        field = define what member to use for calculation
         rng = InputRange
         period = number of time periods to average
         seed = optional seed, (default value is the first value of rng)
 
     Returns:
-        A range of exponential moving averages
+        An exponential moving average range
 +/
 auto ema(string field="", Range) (Range rng, int period, double seed = double.init) {
     import std.math : isNaN;
@@ -193,8 +174,6 @@ auto ema(string field="", Range) (Range rng, int period, double seed = double.in
 
 ///
 unittest {
-    import std.math : approxEqual;
-
     auto a = iota(1,100); // range of ints 1 to 100
 
     assert (a.ema(10) // period 10, default seed of 1 (the first element)
@@ -206,9 +185,21 @@ unittest {
 
     // test based on
     // http://www.dummies.com/personal-finance/investing/stocks-trading/how-to-calculate-exponential-moving-average-in-trading/
-    auto b = [22.81,23.09,22.91,23.23,22.83,23.05,23.02,23.29,23.41,23.49,24.6,24.63,24.51,23.73,23.31,23.53,23.06,23.25,23.12,22.8,22.84];
+    auto b = [22.81,23.09,22.91,
+              23.23,22.83,23.05,
+              23.02,23.29,23.41,
+              23.49,24.6,24.63,
+              24.51,23.73,23.31,
+              23.53,23.06,23.25,
+              23.12,22.8,22.84];
     assert (b.ema(9)
-             .approxEqual([22.81,22.87,22.87,22.95,22.92,22.95,22.96,23.03,23.1,23.18,23.47,23.7,23.86,23.83,23.73,23.69,23.56,23.5,23.42,23.3,23.21]));
+             .approxEqual([22.81,22.87,22.87,
+                           22.95,22.92,22.95,
+                           22.96,23.03,23.1,
+                           23.18,23.47,23.7,
+                           23.86,23.83,23.73,
+                           23.69,23.56,23.5,
+                           23.42,23.3,23.21]));
 
     auto c = iota(1,100).map!(a => tuple!("index","value")(a,a));
     assert (c.ema!"value"(10)
@@ -217,44 +208,378 @@ unittest {
 }
 
 auto result (double start, double end) {
-    // returns result as a percentage of start
     return (end - start) / start;
 }
 
-auto result(T) (in T p) pure {
-    assert (p.count == 2);
-    return result(p.front.price,p.back.price);
+auto result(T) (in T trade) pure {
+    return result(trade.front.price,trade.back.price);
 }
 
+/++
+    Given a range of trades, gives the percentage
+    increase/decrease of each sequential $(LREF Trade).
+
+    Params:
+        trades = A range of $(LREF Trade)'s
+
+    Returns:
+        The percentage increase/decrease of trades
++/
 auto results(T) (in T trades) pure {
     return trades.chunks(2)
                  .map!(a => a.result);
 }
 
+///
+unittest {
+    Trade[] trades = [Trade(DateTime(Date(2000,1,1)),3,Action.buy),
+                      Trade(DateTime(Date(2000,1,2)),4,Action.sell),
+                      Trade(DateTime(Date(2000,1,3)),4.5,Action.buy),
+                      Trade(DateTime(Date(2000,1,4)),4,Action.sell)];
+
+    assert (trades.results
+                  .approxEqual([0.333,-0.111]));
+}
+
+/++
+    Given a range of trades, return the total number
+    of days holding each trade.
+
+    Params:
+        trades = A range of $(LREF Trade)'s
+
++/
 auto daysHeld(T) (in T trades) pure {
     return trades.chunks(2)
                  .map!(a => (a[1].time - a[0].time).total!"days")
                  .sum;
 }
 
+///
+unittest {
+    Trade[] trades = [Trade(DateTime(Date(2000,1,1)),3,Action.buy),
+                      Trade(DateTime(Date(2000,1,8)),4,Action.sell),
+                      Trade(DateTime(Date(2001,5,3)),4.5,Action.buy),
+                      Trade(DateTime(Date(2001,5,23)),4,Action.sell)];
+    assert (trades.daysHeld==27);
+}
+
+/++
+    Given a range of trades, return the
+    average number of trades per year.
+
+    Serves as an indication of how "busy"
+    a particular trading strategy could be
+    during the year.
+
+    Params:
+        trades = A range of $(LREF Trade)'s
++/
 auto tradesPerYear(T) (in T trades) pure {
     return (trades.count/2).to!double / (((trades.back.time-trades.front.time).total!"days")/365.25);
 }
 
-// if you just held for the duration
+///
+unittest {
+    Trade[] trades = [Trade(DateTime(Date(2000,1,1)),3,Action.buy),
+                      Trade(DateTime(Date(2000,1,8)),4,Action.sell),
+                      Trade(DateTime(Date(2001,5,3)),4.5,Action.buy),
+                      Trade(DateTime(Date(2001,5,23)),4,Action.sell),
+                      Trade(DateTime(Date(2002,1,1)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,1,2)),4,Action.sell)
+                      ];
+
+    // 3 trades, over 2 years + 1 day
+    assert (trades.tradesPerYear
+                  .approxEqual(3 / ((365*2+1)/365.25)));
+}
+
+/++
+    Given a range of trades, return the
+    percentage gain/loss of the first trade
+    with the last trade.
+
+    Params:
+        trades = A range of $(LREF Trade)'s
++/
 auto marketReturn(T) (in T trades) pure {
-    assert (trades.count >= 2);
-    return profit (trades.front.price,trades.back.price);
+    return result (trades.front.price,trades.back.price);
 }
 
-auto winRate(T) (T profitRange) pure {
-    return profitRange.count!(a => a > 0) / profitRange.count.to!double;
+///
+unittest {
+    Trade[] trades = [Trade(DateTime(Date(2000,1,1)),3,Action.buy),
+                      Trade(DateTime(Date(2000,1,8)),4,Action.sell),
+                      Trade(DateTime(Date(2001,5,3)),5,Action.buy),
+                      Trade(DateTime(Date(2001,5,23)),5.5,Action.sell),
+                      Trade(DateTime(Date(2002,1,1)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,1,2)),4.8,Action.sell)
+                      ];
+
+    assert (trades.marketReturn.approxEqual((4.8-3)/3));
 }
 
-auto winRateWeighted(T) (T profitRange) pure {
-    return profitRange.enumerate(1)
-                      .map!(a => (a.value > 0) ? a.index : 0)
-                      .sum / iota(1,profitRange.count+1).sum.to!double;
+
+auto winlossRate(string type, T) (in T trades, Flag!"weighted" flag, double subtract) pure {
+    static assert (type=="win" || type=="loss");
+    import std.functional : greaterThan, lessThan;
+
+    static if (type=="win") {
+        alias myCompare = greaterThan;
+    } else {
+        alias myCompare = lessThan;
+    }
+
+    if (flag==Yes.weighted) {
+        return trades.results
+                     .enumerate(1)
+                     .map!(a => (myCompare(a.value-subtract,0)) ? a.index : 0)
+                     .sum / iota(1,trades.results.count+1).sum.to!double;
+    } else {
+        return trades.results.count!(a => myCompare(a-subtract,0)) / trades.results.count.to!double;
+    }
+}
+
+/++
+    Given a range of trades, return the
+    win rate.
+
+    Params:
+        trades = A range of $(LREF Trade)'s
+        flag = Whether the results are time weighted (default No)
+        subtract = A percentage to subtract from
+                   each result (i.e. brokerage)
++/
+auto winRate(T) (in T trades, double subtract=0, Flag!"weighted" flag = No.weighted) pure {
+    return winlossRate!"win" (trades,flag,subtract);
+}
+
+auto winRate(T) (in T trades, Flag!"weighted" flag = No.weighted, double subtract=0) pure {
+    return winlossRate!"win" (trades,flag,subtract);
+}
+
+auto winRate(T) (in T trades) pure {
+    return winlossRate!"win" (trades,No.weighted,0);
+}
+
+///
+unittest {
+    Trade[] trades = [Trade(DateTime(Date(2000,1,1)),3,Action.buy),
+                      Trade(DateTime(Date(2000,1,8)),4,Action.sell),
+                      Trade(DateTime(Date(2001,5,3)),5,Action.buy),
+                      Trade(DateTime(Date(2001,5,23)),5.5,Action.sell),
+                      Trade(DateTime(Date(2002,1,1)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,1,2)),4.2,Action.sell),
+                      Trade(DateTime(Date(2002,2,1)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,2,2)),4.5,Action.sell)
+                      ];
+
+    // 4 trades, 2 winning, 1 losing
+    assert (trades.winRate
+                  .approxEqual(2.0 / 4));
+
+    assert (trades.winRate(0.1)             // subtract brokerage of 10%
+                  .approxEqual(1.0 / 4));   // only one winner now
+
+
+    // sequentially, trades go: win, win, loss, draw
+    // the wins are given less weighting, as they
+    // are the "oldest"
+    assert (trades.winRate(Yes.weighted)
+                  .approxEqual(0.3));
+
+    assert (trades.winRate(Yes.weighted,0.01) // subtract brokerage of 1%
+                  .approxEqual(0.3));         // no change, same number of winners
+}
+
+
+
+
+/++
+    Given a range of trades, return the
+    loss rate.
+
+    Params:
+        trades = A range of $(LREF Trade)'s
+        flag = Whether the results are time weighted (default No)
+        subtract = A percentage to subtract from
+                   each result (i.e. brokerage). Default 0
++/
+auto lossRate(T) (in T trades, double subtract=0, Flag!"weighted" flag = No.weighted) pure {
+    return winlossRate!"loss" (trades,flag,subtract);
+}
+
+auto lossRate(T) (in T trades, Flag!"weighted" flag = No.weighted, double subtract=0) pure {
+    return winlossRate!"loss" (trades,flag,subtract);
+}
+
+auto lossRate(T) (in T trades) pure {
+    return winlossRate!"loss" (trades,No.weighted,0);
+}
+
+///
+unittest {
+    Trade[] trades = [Trade(DateTime(Date(2000,1,1)),3,Action.buy),
+                      Trade(DateTime(Date(2000,1,8)),4,Action.sell),
+                      Trade(DateTime(Date(2001,5,3)),5,Action.buy),
+                      Trade(DateTime(Date(2001,5,23)),5.5,Action.sell),
+                      Trade(DateTime(Date(2002,1,1)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,1,2)),4.2,Action.sell),
+                      Trade(DateTime(Date(2002,2,1)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,2,2)),4.5,Action.sell)
+                      ];
+
+    // 4 trades, 2 winning, 1 losing
+    assert (trades.lossRate
+                  .approxEqual(1.0 / 4));
+
+    assert (trades.lossRate(0.01)
+                  .approxEqual(2.0 / 4));      // two losses now, due to
+                                               // brokerage of 1%
+
+    // sequentially, trades go: win, win, loss, draw
+    // the loss is given more weighting than wins, as
+    // it is "newer"
+    assert (trades.lossRate(Yes.weighted)
+                  .approxEqual(0.3));
+
+    assert (trades.lossRate(Yes.weighted,0.01) // subtract brokerage of 1%
+                  .approxEqual(0.7));          // loss rate increase, as the
+                                               // final pair is now a loss
+}
+
+auto winslosses(string type,T) (in T trades, double subtract) pure {
+    static assert (type=="win" || type=="loss");
+    import std.functional : greaterThan, lessThan;
+
+    static if (type=="win") {
+        alias myCompare = greaterThan;
+    } else {
+        alias myCompare = lessThan;
+    }
+
+    import std.math : abs;
+    return trades.results
+                 .filter!(a => myCompare(a-subtract,0))
+                 .map!(a => (a-subtract).abs);
+}
+
+/++
+    Given a range of trades, return the
+    winners as a range of results.
+
+    Params:
+        trades = A range of $(LREF Trade)'s
+        subtract = A percentage to subtract from
+                   each result (i.e. brokerage)
++/
+auto wins(T) (in T trades, double subtract=0) pure {
+    return trades.winslosses!"win"(subtract);
+}
+
+///
+unittest {
+    Trade[] trades = [Trade(DateTime(Date(2000,1,1)),3,Action.buy),
+                      Trade(DateTime(Date(2000,1,8)),4,Action.sell),
+                      Trade(DateTime(Date(2001,5,3)),5,Action.buy),
+                      Trade(DateTime(Date(2001,5,23)),5.5,Action.sell),
+                      Trade(DateTime(Date(2002,1,1)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,1,2)),4.2,Action.sell),
+                      Trade(DateTime(Date(2002,2,1)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,2,2)),4.5,Action.sell),
+                      Trade(DateTime(Date(2002,2,4)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,2,5)),4.9,Action.sell)
+                      ];
+
+    assert (trades.wins
+                  .approxEqual([
+                                0.333,   // from the first buy/sell pair (3 and 4)
+                                0.1,     // from the second buy/sell pair (5 and 5.5)
+                                0.0889   // from the last buy/sell pair (4.5 and 4.9)
+                               ]));
+
+    assert (trades.wins(0.01)            // 1% commision
+                  .approxEqual([
+                                0.333-0.01,
+                                0.1-0.01,
+                                0.0889-0.01
+                               ]));
+}
+
+/++
+    Given a range of trades, return the
+    losers as a range of results.
+
+    Note: losses are expressed as a positive percentage.
+
+    Params:
+        trades = A range of $(LREF Trade)'s
+        subtract = A percentage to subtract from
+                   each result (i.e. brokerage)
++/
+auto losses(T) (in T trades, double subtract=0) pure {
+    return trades.winslosses!"loss"(subtract);
+}
+
+///
+unittest {
+    Trade[] trades = [Trade(DateTime(Date(2000,1,1)),3,Action.buy),
+                      Trade(DateTime(Date(2000,1,8)),4,Action.sell),
+                      Trade(DateTime(Date(2001,5,3)),5,Action.buy),
+                      Trade(DateTime(Date(2001,5,23)),5.5,Action.sell),
+                      Trade(DateTime(Date(2002,1,1)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,1,2)),4.2,Action.sell),
+                      Trade(DateTime(Date(2002,2,1)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,2,2)),4.5,Action.sell),
+                      Trade(DateTime(Date(2002,2,4)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,2,5)),4.9,Action.sell)
+                      ];
+
+    assert (trades.losses
+                  .approxEqual([
+                                0.0667   // from the third buy/sell pair (4.5 and 4.2)
+                               ]));
+
+    assert (trades.losses(0.01)          // 1% commision
+                  .approxEqual([
+                                 0.0667+0.01,
+                                 0.01
+                               ]));
+}
+
+/++
+    Given a range of trades, return the
+    profit factor.
+
+    Params:
+        trades = A range of $(LREF Trade)'s
+        subtract = A percentage to subtract from
+                   each result (i.e. brokerage)
++/
+auto profitFactor(T) (in T trades, double subtract=0) pure {
+    return (trades.wins(subtract).mean * trades.winRate(subtract)) /
+           (trades.losses(subtract).mean * trades.lossRate(subtract));
+}
+
+///
+unittest {
+    Trade[] trades = [Trade(DateTime(Date(2000,1,1)),3,Action.buy),
+                      Trade(DateTime(Date(2000,1,8)),4,Action.sell),
+                      Trade(DateTime(Date(2001,5,3)),5,Action.buy),
+                      Trade(DateTime(Date(2001,5,23)),5.5,Action.sell),
+                      Trade(DateTime(Date(2002,1,1)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,1,2)),4.2,Action.sell),
+                      Trade(DateTime(Date(2002,2,1)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,2,2)),4.5,Action.sell),
+                      Trade(DateTime(Date(2002,2,4)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,2,5)),4.9,Action.sell)
+                      ];
+
+    assert (trades.profitFactor
+                  .approxEqual((0.174*0.6) / (0.067*0.2)));  // avg wins * win rate / avg loss * loss rate
+
+    assert (trades.profitFactor(0.01)
+                  .approxEqual((0.164*0.6) / (0.0433*0.4)));
 }
 
 auto years(T) (in T trades) pure {
@@ -262,6 +587,16 @@ auto years(T) (in T trades) pure {
     return (trades.back.time - trades.front.time).total!"days" / 365.0;
 }
 
+/++
+    Given a range of trades and initial capital,
+    return the Internal Rate of Return (IRR) assuming
+    trades are reinvested.
+
+    Params:
+        trades = A range of $(LREF Trade)'s
+        startValue = Initial capital
+        brokerage = Brokeraage/commision for each trade
++/
 auto IIR(T) (in T trades, double startValue, double brokerage=0) pure {
     auto rvalue=startValue;
     foreach (pair; trades.chunks(2)){
@@ -286,19 +621,22 @@ auto IIR(T) (in T trades, double startValue, double brokerage=0) pure {
     return pow((rvalue / startValue),1/trades.years)-1;
 }
 
-auto lossRate(T) (T profitRange) pure {
-    return profitRange.count!(a => a < 0) / profitRange.count.to!double;
+///
+unittest {
+    Trade[] trades = [Trade(DateTime(Date(2000,1,1)),3,Action.buy),
+                      Trade(DateTime(Date(2000,1,8)),4,Action.sell),
+                      Trade(DateTime(Date(2001,5,3)),5,Action.buy),
+                      Trade(DateTime(Date(2001,5,23)),5.5,Action.sell),
+                      Trade(DateTime(Date(2002,1,1)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,1,2)),4.2,Action.sell),
+                      Trade(DateTime(Date(2002,2,1)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,2,2)),4.5,Action.sell)
+                      ];
 }
 
-auto wins(T) (T profitRange) pure {
-    return profitRange.filter!(a => a > 0);
-}
 
-auto losses(T) (T profitRange) pure {
-    import std.math : abs;
-    return profitRange.filter!(a => a < 0)
-                      .map!(a => a.abs);
-}
+
+
 
 auto weighted(T) (T profitRange) pure {
      return profitRange.enumerate(1)
@@ -330,22 +668,42 @@ enum Action {buy,sell,none}
 alias Trade = Tuple!(DateTime,"time",double,"price",Action,"action");
 
 auto completedOnly(Range) (Range trades) {
-    if (trades.empty) return trades;
-    if (trades.front.action==Action.sell) {
-        trades.popFront;
+    auto rvalue = trades.filter!(a => a.action != Action.none)
+                        .uniq!((a,b) => a.action == b.action)
+                        .array;
+
+    if (rvalue.empty) return rvalue;
+    if (rvalue.front.action==Action.sell) {
+        rvalue.popFront;
     }
 
-    if (trades.back.action==Action.buy) {
-        trades.popBack;
+    if (rvalue.back.action==Action.buy) {
+        rvalue.popBack;
     }
 
-    if (trades.count % 2 != 0) {
-        writeln ("error: ",trades.count);
-        foreach (trade; trades) writeln (trade);
-        readln;
-    }
-
-    assert (trades.count % 2 == 0);
-    return trades;
+    assert (rvalue.count % 2 == 0);
+    return rvalue;
 }
 
+auto tradeAction(T) (T data) {
+    if (data.count % 2 != 0) {
+        throw new Exception ("Argument data must be even number in length");
+    }
+
+    auto firstHalf = data.take(data.count / 2);
+    auto lastHalf = data.drop(data.count / 2);
+
+    // test sell
+    if (firstHalf.all!(a => a[2] < a[0]-a[1]) &&
+        lastHalf.all!(a => a[2] >= a[0]-a[1])) {
+        return Action.sell;
+    }
+
+    // test buy
+    if (firstHalf.all!(a => a[2] > a[0]-a[1]) &&
+        lastHalf.all!(a => a[2] <= a[0]-a[1])) {
+        return Action.buy;
+    }
+
+    return Action.none;
+}
