@@ -582,6 +582,44 @@ unittest {
                   .approxEqual((0.164*0.6) / (0.0433*0.4)));
 }
 
+auto expectancy(T) (in T trades, double subtract=0) {
+    return (trades.wins(subtract).mean * trades.winRate(subtract)) -
+           (trades.losses(subtract).mean * trades.lossRate(subtract));
+}
+
+auto maxConsecutiveLosses(T) (in T trades, double subtract=0) {
+    return trades.results
+                 .map!(a => a-subtract)
+                 .array
+                 .group!((a,b) => a < 0)
+                 .array;
+
+}
+
+unittest {
+    Trade[] trades = [Trade(DateTime(Date(2000,1,1)),3,Action.buy),
+                      Trade(DateTime(Date(2000,1,8)),4,Action.sell),
+
+                      Trade(DateTime(Date(2001,5,3)),5,Action.buy),
+                      Trade(DateTime(Date(2001,5,23)),5.5,Action.sell),
+
+                      Trade(DateTime(Date(2002,1,1)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,1,2)),4.2,Action.sell),
+
+                      Trade(DateTime(Date(2002,2,1)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,2,2)),4.5,Action.sell),
+
+                      Trade(DateTime(Date(2002,2,4)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,2,5)),4.9,Action.sell),
+
+                      Trade(DateTime(Date(2002,2,6)),4.5,Action.buy),
+                      Trade(DateTime(Date(2002,2,7)),4.2,Action.sell)
+                      ];
+
+    trades.maxConsecutiveLosses(0.01).each!(a => a.writeln);
+
+    assert(0);
+}
 auto years(T) (in T trades) pure {
     // assume sorted
     return (trades.back.time - trades.front.time).total!"days" / 365.0;
@@ -685,24 +723,32 @@ auto completedOnly(Range) (Range trades) {
     return rvalue;
 }
 
-auto tradeAction(T) (T data) {
-    if (data.count % 2 != 0) {
-        throw new Exception ("Argument data must be even number in length");
-    }
+auto tradeAction(T) (T data, string ignore="No") {
+    assert (data.count % 2 == 0);
+    auto midpoint = data.count / 2;
+    auto firstHalf = data.take(midpoint);
+    auto lastHalf = data.drop(midpoint);
 
-    auto firstHalf = data.take(data.count / 2);
-    auto lastHalf = data.drop(data.count / 2);
-
-    // test sell
-    if (firstHalf.all!(a => a[2] < a[0]-a[1]) &&
-        lastHalf.all!(a => a[2] >= a[0]-a[1])) {
-        return Action.sell;
-    }
 
     // test buy
     if (firstHalf.all!(a => a[2] > a[0]-a[1]) &&
         lastHalf.all!(a => a[2] <= a[0]-a[1])) {
-        return Action.buy;
+
+        if (ignore=="Yes") {
+            if (firstHalf.front[0] > firstHalf.front[1]) return Action.buy;
+        } else {
+            return Action.buy;
+        }
+    }
+
+    // test sell
+    if (firstHalf.all!(a => a[2] < a[0]-a[1]) &&
+        lastHalf.all!(a => a[2] >= a[0]-a[1])) {
+        if (ignore=="Yes") {
+            if (firstHalf.front[0] < firstHalf.front[1]) return Action.sell;
+        } else {
+            return Action.sell;
+        }
     }
 
     return Action.none;
