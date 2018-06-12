@@ -587,15 +587,24 @@ auto expectancy(T) (in T trades, double subtract=0) {
            (trades.losses(subtract).mean * trades.lossRate(subtract));
 }
 
-auto maxConsecutiveLosses(T) (in T trades, double subtract=0) {
-    return trades.results
-                 .map!(a => a-subtract)
-                 .array
-                 .group!((a,b) => a < 0)
-                 .array;
+/++
+    Given a range of trades, return the
+    highest count of consecutive losses.
 
+    Params:
+        trades = A range of $(LREF Trade)'s
+        subtract = A percentage to subtract from
+                   each result (i.e. brokerage)
++/
+auto maxConsecutiveLosses(T) (in T trades, double subtract=0) {
+    return  trades.results
+                  .map!(a => a-subtract)
+                  .splitter!(a => a >= 0)
+                  .maxElement!(a => a.count)
+                  .count;
 }
 
+///
 unittest {
     Trade[] trades = [Trade(DateTime(Date(2000,1,1)),3,Action.buy),
                       Trade(DateTime(Date(2000,1,8)),4,Action.sell),
@@ -616,10 +625,10 @@ unittest {
                       Trade(DateTime(Date(2002,2,7)),4.2,Action.sell)
                       ];
 
-    trades.maxConsecutiveLosses(0.01).each!(a => a.writeln);
-
-    assert(0);
+    assert (trades.maxConsecutiveLosses==1);
+    assert (trades.maxConsecutiveLosses(0.01)==2);
 }
+
 auto years(T) (in T trades) pure {
     // assume sorted
     return (trades.back.time - trades.front.time).total!"days" / 365.0;
@@ -633,9 +642,9 @@ auto years(T) (in T trades) pure {
     Params:
         trades = A range of $(LREF Trade)'s
         startValue = Initial capital
-        brokerage = Brokeraage/commision for each trade
+
 +/
-auto IIR(T) (in T trades, double startValue, double brokerage=0) pure {
+auto IRR(T) (in T trades, double startValue) {
     auto rvalue=startValue;
     foreach (pair; trades.chunks(2)){
         auto buyTrade = pair[0];
@@ -643,6 +652,7 @@ auto IIR(T) (in T trades, double startValue, double brokerage=0) pure {
 
         // buy
         import std.math : floor;
+        auto brokerage = (rvalue > 1000) ? 30 : 15;
         auto bought = floor((rvalue - brokerage) / buyTrade.price);
         rvalue -= bought*buyTrade.price;
         rvalue -= brokerage;
@@ -650,13 +660,44 @@ auto IIR(T) (in T trades, double startValue, double brokerage=0) pure {
         // sell
         rvalue += bought*sellTrade.price;
         rvalue -= brokerage;
+
+        writeln (rvalue," ",pair);
     }
 
     if (rvalue==startValue) return 0;
-    if (rvalue==0) return -1;
+    if (rvalue<=0) return -1;
 
     import std.math : pow;
     return pow((rvalue / startValue),1/trades.years)-1;
+}
+
+
+auto annualROI(T) (in T trades, double cost, double brokerage=0) {
+    // aim is to have cost remain throughout
+
+    auto rvalue = cost;
+
+    auto tradeValue(T) (T pair) {
+        import std.math : floor;
+        auto quantity = floor((cost-brokerage) / pair[0].price);
+        auto profit = ((pair[1].price * quantity) - brokerage) -     // sell
+                      ((pair[0].price * quantity) + brokerage);      // buy
+
+        return tuple!("time","value")(pair[1].time,profit);
+    }
+
+    auto flows = trades.chunks(2)
+                       .map!(a => tradeValue(a));
+
+    return ((flows.map!(a => a.value).sum+cost) / cost) / trades.years;
+
+//    import std.datetime.date : Date, Month;
+//    return Interval!Date(Date(trades.front.time.year,trades.front.time.month,1),
+//                         Date(trades.back.time.year,trades.back.time.month,1))
+//                .fwdRange(everyDuration!Date (0,1))
+//                .map!(a => flows.filter!(b => b.time.year==a.year && b.time.month==a.month)
+//                                .map!(b => b.value)
+//                                .sum);
 }
 
 ///
@@ -671,10 +712,6 @@ unittest {
                       Trade(DateTime(Date(2002,2,2)),4.5,Action.sell)
                       ];
 }
-
-
-
-
 
 auto weighted(T) (T profitRange) pure {
      return profitRange.enumerate(1)
@@ -704,7 +741,6 @@ auto staticInvest(T) (in T trades, double invest, double brokerage=0) pure {
 enum Action {buy,sell,none}
 
 alias Trade = Tuple!(DateTime,"time",double,"price",Action,"action");
-
 auto completedOnly(Range) (Range trades) {
     auto rvalue = trades.filter!(a => a.action != Action.none)
                         .uniq!((a,b) => a.action == b.action)
