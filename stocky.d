@@ -10,7 +10,7 @@ Author: $(HTTP wilsonjord.github.io, Jordan K. Wilson)
 
 module stocky;
 
-import std.typecons : Tuple, tuple;
+import std.typecons : Tuple, tuple, Nullable;
 import std.datetime;
 import std.stdio;
 import std.conv : to;
@@ -18,10 +18,31 @@ import std.algorithm;
 import std.range;
 import std.format : format;
 import std.traits;
+import std.math : isNaN;
 
 import dstats : mean, median;
 
-version(unittest) import std.math : approxEqual;
+version(unittest) import std.math : approxEqual, feqrel;
+
+
+auto convertRange(string field="", Range) (Range rng) {
+    static if (!field.empty) {
+        static assert (hasMember!(ElementType!Range,field));
+        return rng.map!("a." ~ field);
+    } else {
+        return rng;
+    }
+}
+
+unittest {
+    auto a = iota(10); // 0 - 9
+    assert (a.convertRange.equal(a));
+
+    auto b = a.map!(a => tuple!("myField")(a));
+    assert (b.convertRange!"myField".equal(a));
+
+    static assert (!__traits(compiles,b.convertRange!"myVar"));
+}
 
 alias Symbol = Tuple!(string,"exchange",string,"name");
 
@@ -78,12 +99,8 @@ auto createSMA(T) (T rng, int period) {
         A simple moving average range
 +/
 auto sma(string field="", Range) (Range rng, int period) {
-    static if (!field.empty) {
-        static assert (hasMember!(ElementType!Range,field));
-        mixin ("return createSMA(rng.map!(a => a." ~ field ~ "),period);");
-    } else {
-        return createSMA(rng,period);
-    }
+    return rng.convertRange!field
+              .createSMA(period);
 }
 
 ///
@@ -96,6 +113,7 @@ unittest {
     assert (b[1].approxEqual((25+25+85) / 3.0));
     assert (b[2].approxEqual((25+85+65) / 3.0));
     assert (b[3].approxEqual(65));
+    assert (a.sma(1).approxEqual(a));
 
     // using user type
     auto c = [EODRecord(DateTime(2000,1,1,0,0,0),
@@ -130,27 +148,58 @@ unittest {
 
 }
 
-auto createEMA(T) (T rng, int period, double seed) {
-    struct EMA(Range) if (isNumeric!(ElementType!Range)) {
-        double currentValue;
-        double weighting;
-        Range rng;
-        this (Range r, int p, double s) {
-            currentValue = s;
-            weighting = 2.0 / (p+1);
-            rng = r;
-        }
-        auto front() { return currentValue; }
-        auto popFront() {
-            rng.popFront;
-            if (!rng.empty){
-                currentValue += (rng.front - currentValue)*weighting;
-            }
-        }
-        auto empty() { return rng.empty; }
-    }
-    return EMA!T (rng,period,seed);
-}
+//auto createEMA(T) (T rng, int period, double seed) {
+//    struct EMA(Range) {
+//        double currentValue;
+//        double weighting;
+//        Range rng;
+//        bool hasSeed;
+//        size_t period;
+//        this (Range r, int p, double seed) {
+//            rng = r;
+//            period=p;
+//            weighting = 2.0 / (period+1);
+//            hasSeed = !seed.isNaN;
+//            if (hasSeed) {
+//                currentValue = seed;
+//            } else {
+//                currentValue = rng.take(period).map!(a => a.value).mean;
+//            }
+//        }
+//
+//        auto front() {
+//            if (!hasSeed) {
+//                if (rng.front.index < period-1) {
+//                    return double.nan;
+//                } else {
+//                    return currentValue;
+//                }
+//            } else {
+//                return currentValue;
+//            }
+//        }
+//
+//        auto popFront() {
+//            rng.popFront;
+//            if (!rng.empty){
+//                if (!hasSeed) {
+//                    if (rng.front.index > period-1) {
+//                        currentValue += (rng.front.value - currentValue)*weighting;
+//                    }
+//                } else {
+//                    currentValue += (rng.front.value - currentValue)*weighting;
+//                }
+//            }
+//        }
+//
+//        auto empty() { return rng.empty; }
+//    }
+//
+//    auto doReturn(T) (T rng) {
+//        return EMA!T (rng,period,seed);
+//    }
+//    return doReturn(rng.enumerate);
+//}
 
 /++
     Params:
@@ -163,25 +212,76 @@ auto createEMA(T) (T rng, int period, double seed) {
         An exponential moving average range
 +/
 auto ema(string field="", Range) (Range rng, int period, double seed = double.init) {
-    import std.math : isNaN;
-    static if (!field.empty) {
-        static assert (hasMember!(ElementType!Range,field));
-        mixin ("return createEMA(rng.map!(a => a." ~ field ~ "),period,seed.isNaN ? rng.map!(a => a." ~ field ~ ").front : seed);");
-    } else {
-        return createEMA(rng, period, seed.isNaN ? rng.front : seed);
+    struct EMA(IndexedRange) {
+        double currentValue;
+        double weighting;
+        IndexedRange rng;
+        bool hasSeed;
+        size_t period;
+        this (IndexedRange r, int p, double seed) {
+            rng = r;
+            period=p;
+            weighting = 2.0 / (period+1);
+            hasSeed = !seed.isNaN;
+            if (hasSeed) {
+                currentValue = seed;
+            } else {
+                currentValue = rng.take(period).map!(a => a.value).mean;
+            }
+        }
+
+        auto front() {
+            if (!hasSeed) {
+                if (rng.front.index < period-1) {
+                    return double.nan;
+                } else {
+                    return currentValue;
+                }
+            } else {
+                return currentValue;
+            }
+        }
+
+        auto popFront() {
+            rng.popFront;
+            if (!rng.empty){
+                if (!hasSeed) {
+                    if (rng.front.index > period-1) {
+                        currentValue += (rng.front.value - currentValue)*weighting;
+                    }
+                } else {
+                    currentValue += (rng.front.value - currentValue)*weighting;
+                }
+            }
+        }
+
+        auto empty() { return rng.empty; }
     }
+
+    auto myRng = rng.convertRange!field;
+    return EMA!(typeof(myRng.enumerate)) (myRng.enumerate,period,seed);
 }
 
 ///
 unittest {
-    auto a = iota(1,100); // range of ints 1 to 100
+    // http://investexcel.net/how-to-calculate-ema-in-excel/
+    auto close = [27.62,27.25,26.74,26.69,26.55,26.7,26.46,26.83,26.89,27.21,27.04,27.25,27.25,27.15,27.61,27.63,27.88,
+                  27.91,28.01,27.85,27.45,27.93,27.44,27.5,27.34,27.28,27.55,27.86,27.88,28.03,28.04,28.01,28.05,27.87,
+                  27.49,27.76,27.37,27.37,27.81,27.8,27.95,28.15,28.35,28.09,28.14,28,27.87,27.91,27.92,28.14];
 
-    assert (a.ema(10) // period 10, default seed of 1 (the first element)
-             .drop(9)
-             .take(3).approxEqual([6.24,7.10,7.99]));
+    assert (close.ema(26).take(25).all!(a => a.isNaN));
+    assert (!close.ema(26).drop(25).front.isNaN);
+    assert (zip(close.ema(26).drop(25),
+              [27.2869230769231,27.3064102564103,27.3474169040836,27.3868675037811,27.4345069479455,
+               27.4793582851347,27.5186650788284,27.5580232211374,27.5811326121643,27.5743820483002,
+               27.5881315262039,27.571973635374,27.5570126253463,27.5757524308762,27.5923633619224,
+               27.618854964743,27.6581990414287,27.7094435568784,27.7376329230356,27.7674378916996,
+               27.7846647145367,27.7909858467932,27.7998017099937,27.8087052870312,27.83324563614])
+               .all!(a => feqrel(a[0],a[1]) > 11));
 
-    assert (a.ema(5,0) // period 5, seed 0
-             .take(3).approxEqual([0,0.67,1.44]));
+    assert (zip(close.ema(26,27.62).take(5),[27.62,27.59259259,27.52943759,27.46725702,27.39931206])
+                .all!(a => feqrel(a[0],a[1]) > 11));
+
 
     // test based on
     // http://www.dummies.com/personal-finance/investing/stocks-trading/how-to-calculate-exponential-moving-average-in-trading/
@@ -192,7 +292,7 @@ unittest {
               24.51,23.73,23.31,
               23.53,23.06,23.25,
               23.12,22.8,22.84];
-    assert (b.ema(9)
+    assert (b.ema(9,22.81)
              .approxEqual([22.81,22.87,22.87,
                            22.95,22.92,22.95,
                            22.96,23.03,23.1,
@@ -202,9 +302,112 @@ unittest {
                            23.42,23.3,23.21]));
 
     auto c = iota(1,100).map!(a => tuple!("index","value")(a,a));
-    assert (c.ema!"value"(10)
+    assert (c.ema!"value"(10,1)
              .drop(9)
              .take(3).approxEqual([6.24,7.10,7.99]));
+}
+
+auto createK(Range) (Range rng, int windowSize) if (isNumeric!(ElementType!Range)) {
+    return 0.to!(ElementType!Range)
+            .repeat(windowSize-1)   // fill result with 0's until t = windowSize
+                                    // chain with actual k-range
+            .chain(rng.retro        // newest to oldest
+                      .slide!(No.withPartial)(windowSize)
+                      .map!(a => (a[0] - a.minElement).to!double / (a.maxElement - a.minElement))
+                      .retro);      // revert back to oldest to newest
+}
+
+unittest {
+    auto a = [3,6,5,8,9,2,5,2,8,1,5];
+    auto b = a.createK(3);
+    assert (a.length==b.length);
+    assert (b.drop(2).front.approxEqual((5-3) / (6-3).to!double));  // 0.6667
+}
+
+/++
+    Params:
+        field = define what member to use for calculation
+        rng = InputRange
+        lookBack = number of periods to look back (typical 14)
+        kPeriod = moving average for the K line
+                 (use 1 for no moving aveage, a.k.a "fast" K)
+        dPeriod = moving average for the D line
+
+    Returns:
+        A range of K/D pairs
++/
+auto stochasticOscillator(string field="", Range) (Range rng, int lookBack=14, int kPeriod=1, int dPeriod=3) {
+    auto myRng = rng.convertRange!field;
+
+    return zip (myRng.createK(lookBack)
+                     .sma(kPeriod),     // the k line
+                myRng.createK(lookBack)
+                     .sma(kPeriod)
+                     .sma(dPeriod))     // the d line
+                                        // (moving average of the k line)
+              .map!(a => tuple!("K","D")(a.expand));
+}
+
+///
+unittest {
+    auto a = [3,6,5,8,9,2,5,2,8,1,5,4];
+    a.stochasticOscillator(3)
+     .map!(a => [a.K,a.D])
+     .approxEqual([[0.000,0.000],[0.000,0.000],
+                   [0.667,0.222],[1.000,0.556],
+                   [1.000,0.556],[1.000,0.889],
+                   [0.000,0.667],[0.429,0.476],
+                   [0.000,0.143],[1.000,0.476],
+                   [1.000,0.476],[0.000,0.333],
+                   [0.571,0.524],[0.750,0.440]]);
+
+    auto b = a.map!(a => tuple!("close")(a));
+    b.stochasticOscillator!"close"(3)
+     .map!(a => [a.K,a.D])
+     .approxEqual([[0.000,0.000],[0.000,0.000],
+                   [0.667,0.222],[1.000,0.556],
+                   [1.000,0.556],[1.000,0.889],
+                   [0.000,0.667],[0.429,0.476],
+                   [0.000,0.143],[1.000,0.476],
+                   [1.000,0.476],[0.000,0.333],
+                   [0.571,0.524],[0.750,0.440]]);
+
+    // slow stocastic
+    b.stochasticOscillator!"close"(3,3,3)   // look back range 3
+                                            // moving average k
+                                            // moving average d
+     .map!(a => [a.K,a.D])
+     .approxEqual([
+        [0.000,0.000],
+        [0.000,0.000],
+        [0.222,0.074],
+        [0.556,0.259],
+        [0.889,0.556],
+        [0.667,0.704],
+        [0.476,0.677],
+        [0.143,0.429],
+        [0.476,0.365],
+        [0.333,0.317],
+        [0.524,0.444],
+        [0.440,0.433]]);
+}
+
+
+
+auto change(string field="",Range) (Range rng) {
+    auto myRng = rng.convertRange!field;
+
+
+    return chain([myRng.front],myRng).array
+              .slide(2);
+
+}
+
+unittest {
+    auto a = [1,2,3,4,5];
+    a.sum.writeln;
+    a.mean.writeln;
+    assert(0);
 }
 
 auto result (double start, double end) {
@@ -759,7 +962,7 @@ auto completedOnly(Range) (Range trades) {
     return rvalue;
 }
 
-auto tradeAction(T) (T data, string ignore="No") {
+auto tradeAction(T) (T data, string ignore="No") { // TODO investigate adding no trade to start
     assert (data.count % 2 == 0);
     auto midpoint = data.count / 2;
     auto firstHalf = data.take(midpoint);
