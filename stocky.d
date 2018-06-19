@@ -18,19 +18,20 @@ import std.algorithm;
 import std.range;
 import std.format : format;
 import std.traits;
-import std.math : isNaN;
+import std.math : isNaN, abs;
 
 import dstats : mean, median;
 
 version(unittest) import std.math : approxEqual, feqrel;
 
+auto isNaN (int x) { return true; }
 
 auto convertRange(string field="", Range) (Range rng) {
     static if (!field.empty) {
         static assert (hasMember!(ElementType!Range,field));
-        return rng.map!("a." ~ field);
+        return rng.map!("a." ~ field).map!(a => a.to!double);
     } else {
-        return rng;
+        return rng.map!(a => a.to!double);
     }
 }
 
@@ -99,21 +100,28 @@ auto createSMA(T) (T rng, int period) {
         A simple moving average range
 +/
 auto sma(string field="", Range) (Range rng, int period) {
-    return rng.convertRange!field
-              .createSMA(period);
+    auto myRng = rng.convertRange!field;
+    return chain(repeat(double.nan,period-1),
+                 myRng.slide!(No.withPartial)(period)
+                      .map!(a => a.mean));
+
+    //return createSMA(myRng,period);
 }
 
 ///
 unittest {
     // using simple arrays
-    auto a = [25,85,65,45,95,75,15,35];
-    auto b = a.sma(3).array;
+    auto x = [25,85,65,45,95,75,15,35];
 
-    assert (b[0]==25);
-    assert (b[1].approxEqual((25+25+85) / 3.0));
-    assert (b[2].approxEqual((25+85+65) / 3.0));
-    assert (b[3].approxEqual(65));
-    assert (a.sma(1).approxEqual(a));
+    assert (x.sma(3).count == x.length);
+    assert (x.sma(3).take(2).all!(a => a.isNaN));
+    assert (x.sma(3).drop(2).front.approxEqual((25+85+65) / 3.0));
+    assert (x.sma(1).approxEqual(x));
+
+    auto y = [double.nan,double.nan,1,4,9];
+    assert (y.sma(3).count == y.length);
+    assert (y.sma(3).filter!(a => !a.isNaN)
+                    .approxEqual([4.67]));
 
     // using user type
     auto c = [EODRecord(DateTime(2000,1,1,0,0,0),
@@ -143,63 +151,10 @@ unittest {
              .drop(2)
              .front.approxEqual ((11+12+11) / 3.0));
 
-    assert (c.map!(a => a.open).sma(3).equal
-           (c.sma!"open"(3)));
+    assert (c.map!(a => a.open).sma(3).drop(2).equal
+           (c.sma!"open"(3).drop(2)));
 
 }
-
-//auto createEMA(T) (T rng, int period, double seed) {
-//    struct EMA(Range) {
-//        double currentValue;
-//        double weighting;
-//        Range rng;
-//        bool hasSeed;
-//        size_t period;
-//        this (Range r, int p, double seed) {
-//            rng = r;
-//            period=p;
-//            weighting = 2.0 / (period+1);
-//            hasSeed = !seed.isNaN;
-//            if (hasSeed) {
-//                currentValue = seed;
-//            } else {
-//                currentValue = rng.take(period).map!(a => a.value).mean;
-//            }
-//        }
-//
-//        auto front() {
-//            if (!hasSeed) {
-//                if (rng.front.index < period-1) {
-//                    return double.nan;
-//                } else {
-//                    return currentValue;
-//                }
-//            } else {
-//                return currentValue;
-//            }
-//        }
-//
-//        auto popFront() {
-//            rng.popFront;
-//            if (!rng.empty){
-//                if (!hasSeed) {
-//                    if (rng.front.index > period-1) {
-//                        currentValue += (rng.front.value - currentValue)*weighting;
-//                    }
-//                } else {
-//                    currentValue += (rng.front.value - currentValue)*weighting;
-//                }
-//            }
-//        }
-//
-//        auto empty() { return rng.empty; }
-//    }
-//
-//    auto doReturn(T) (T rng) {
-//        return EMA!T (rng,period,seed);
-//    }
-//    return doReturn(rng.enumerate);
-//}
 
 /++
     Params:
@@ -218,6 +173,7 @@ auto ema(string field="", Range) (Range rng, int period, double seed = double.in
         IndexedRange rng;
         bool hasSeed;
         size_t period;
+        size_t startOfData;
         this (IndexedRange r, int p, double seed) {
             rng = r;
             period=p;
@@ -225,31 +181,24 @@ auto ema(string field="", Range) (Range rng, int period, double seed = double.in
             hasSeed = !seed.isNaN;
             if (hasSeed) {
                 currentValue = seed;
+                startOfData = 0;
             } else {
-                currentValue = rng.take(period).map!(a => a.value).mean;
+                startOfData = period - 1;
+                currentValue = rng.take(period)
+                                  .map!(a => a.value)
+                                  .mean;
             }
         }
 
         auto front() {
-            if (!hasSeed) {
-                if (rng.front.index < period-1) {
-                    return double.nan;
-                } else {
-                    return currentValue;
-                }
-            } else {
-                return currentValue;
-            }
+            if (rng.front.index < startOfData) return double.nan;
+            return currentValue;
         }
 
         auto popFront() {
             rng.popFront;
             if (!rng.empty){
-                if (!hasSeed) {
-                    if (rng.front.index > period-1) {
-                        currentValue += (rng.front.value - currentValue)*weighting;
-                    }
-                } else {
+                if (rng.front.index >= startOfData) {
                     currentValue += (rng.front.value - currentValue)*weighting;
                 }
             }
@@ -259,7 +208,8 @@ auto ema(string field="", Range) (Range rng, int period, double seed = double.in
     }
 
     auto myRng = rng.convertRange!field;
-    return EMA!(typeof(myRng.enumerate)) (myRng.enumerate,period,seed);
+    auto nas = myRng.countUntil!(a => !a.isNaN);
+    return chain(myRng.take(nas),EMA!(typeof(myRng.enumerate)) (myRng.drop(nas).enumerate,period,seed));
 }
 
 ///
@@ -268,6 +218,7 @@ unittest {
     auto close = [27.62,27.25,26.74,26.69,26.55,26.7,26.46,26.83,26.89,27.21,27.04,27.25,27.25,27.15,27.61,27.63,27.88,
                   27.91,28.01,27.85,27.45,27.93,27.44,27.5,27.34,27.28,27.55,27.86,27.88,28.03,28.04,28.01,28.05,27.87,
                   27.49,27.76,27.37,27.37,27.81,27.8,27.95,28.15,28.35,28.09,28.14,28,27.87,27.91,27.92,28.14];
+
 
     assert (close.ema(26).take(25).all!(a => a.isNaN));
     assert (!close.ema(26).drop(25).front.isNaN);
@@ -281,7 +232,6 @@ unittest {
 
     assert (zip(close.ema(26,27.62).take(5),[27.62,27.59259259,27.52943759,27.46725702,27.39931206])
                 .all!(a => feqrel(a[0],a[1]) > 11));
-
 
     // test based on
     // http://www.dummies.com/personal-finance/investing/stocks-trading/how-to-calculate-exponential-moving-average-in-trading/
@@ -393,21 +343,86 @@ unittest {
 }
 
 
-
-auto change(string field="",Range) (Range rng) {
+auto rsi(string field="",Range) (Range rng, int period) {
     auto myRng = rng.convertRange!field;
 
+    auto nas = myRng.countUntil!(a => !a.isNaN);
+    auto gainSeed = myRng.changes.drop(nas).take(period).filter!(a => a > 0).sum / period;
+    auto lossSeed = myRng.changes.drop(nas).take(period).filter!(a => a < 0).sum.abs / period;
 
-    return chain([myRng.front],myRng).array
-              .slide(2);
+    auto currentGain=gainSeed;
+    auto currentLoss=lossSeed;
 
+    auto getGain(T) (T value) {
+        auto rvalue = ((period-1)*currentGain + ((value > 0) ? value : 0)) / period;
+        currentGain = rvalue;
+        return rvalue;
+    }
+
+    auto getLoss(T) (T value) {
+        auto rvalue = ((period-1)*currentLoss + ((value < 0) ? value.abs : 0)) / period;
+        currentLoss = rvalue;
+        return rvalue;
+    }
+
+    auto gains =  chain(myRng.take(nas),double.nan.repeat(period),[gainSeed],
+                        myRng.changes
+                             .drop(nas)
+                             .drop(period+1)
+                             .map!(a => getGain(a)));
+
+    auto losses =  chain(myRng.take(nas),double.nan.repeat(period),[lossSeed],
+                        myRng.changes
+                             .drop(nas)
+                             .drop(period+1)
+                             .map!(a => getLoss(a)));
+
+    return zip(gains,losses).map!(a => 100 - (100 / (1 + (a[0] / a[1]))));
+
+    //gains.writeln;
+    //losses.writeln;
+    //readln;
+//    auto firstValueRS = (myRng.drop(nas)
+//                              .change
+//                              .filter!(a => a > 0)
+//                              .sum / period) /
+//                        (myRng.drop(nas)
+//                              .change
+//                              .filter!(a => a < 0)
+//                              .sum / period);
+
+    //myRng.drop(nas).cumulativeFold!((a,b) => 100 - (100/(1 + a))(firstValueRS);
+    //return chain(myRng.take(nas),EMA!(typeof(myRng.enumerate)) (myRng.drop(nas).enumerate,period,seed));
 }
 
 unittest {
-    auto a = [1,2,3,4,5];
-    a.sum.writeln;
-    a.mean.writeln;
-    assert(0);
+    auto a = [44.34,44.0902,44.1497,43.6124,44.3278,44.8264,45.0955,45.4245,45.8433,46.0826,45.8931,46.0328,45.614,46.282,46.282,46.0028,46.0328,46.4116,46.2222,45.6439,46.2122,46.2521,45.7137,46.4515,45.7835,45.3548,44.0288,44.1783,44.2181,44.5672,43.4205,42.6628,43.1314];
+
+    assert (a.rsi(14).drop(14).approxEqual(
+        [70.532789483695,66.3185618051723,66.5498299355276,69.4063053388443,66.3551690562718,57.9748557143082,62.929606754597,63.2571475625453,56.0592987152632,62.3770714431804,54.7075730812613,50.4227744114564,39.9898231453766,41.4604819757056,41.8689160925433,45.4632124452868,37.3040420898597,33.0795229943885,37.7729521144349]
+    ));
+
+    auto b = a.map!(a => tuple!("close")(a));
+    assert (b.rsi!"close"(14).drop(14).approxEqual(
+        [70.532789483695,66.3185618051723,66.5498299355276,69.4063053388443,66.3551690562718,57.9748557143082,62.929606754597,63.2571475625453,56.0592987152632,62.3770714431804,54.7075730812613,50.4227744114564,39.9898231453766,41.4604819757056,41.8689160925433,45.4632124452868,37.3040420898597,33.0795229943885,37.7729521144349]
+    ));
+
+}
+
+auto changes(string field="",Range) (Range rng) {
+    auto myRng = rng.convertRange!field;
+    return chain([double.nan],rng.convertRange!field
+                                 .slide(2)
+                                 .map!(a => a[1]-a[0]));
+}
+
+unittest {
+    auto a = [1,3,4,7,10];
+    assert (a.changes.drop(1).equal([2,1,3,3]));
+
+    auto b = [double.nan,double.nan,1,3,4,7,10];
+    assert (b.changes.count==b.count);
+    assert (b.changes.endsWith([2,1,3,3]));
 }
 
 auto result (double start, double end) {
@@ -444,6 +459,10 @@ unittest {
                   .approxEqual([0.333,-0.111]));
 }
 
+auto dayHeld(T) (in T trade) pure {
+    return trade.map!(a => (a[1].time - a[0].time).total!"days");
+}
+
 /++
     Given a range of trades, return the total number
     of days holding each trade.
@@ -465,6 +484,11 @@ unittest {
                       Trade(DateTime(Date(2001,5,3)),4.5,Action.buy),
                       Trade(DateTime(Date(2001,5,23)),4,Action.sell)];
     assert (trades.daysHeld==27);
+}
+
+
+auto averageDaysHeld(T) (in T trades) {
+    return trades.daysHeld / (trades.count / 2).to!double;
 }
 
 /++
@@ -837,6 +861,8 @@ auto years(T) (in T trades) pure {
     return (trades.back.time - trades.front.time).total!"days" / 365.0;
 }
 
+
+
 /++
     Given a range of trades and initial capital,
     return the Internal Rate of Return (IRR) assuming
@@ -893,14 +919,6 @@ auto annualROI(T) (in T trades, double cost, double brokerage=0) {
                        .map!(a => tradeValue(a));
 
     return ((flows.map!(a => a.value).sum+cost) / cost) / trades.years;
-
-//    import std.datetime.date : Date, Month;
-//    return Interval!Date(Date(trades.front.time.year,trades.front.time.month,1),
-//                         Date(trades.back.time.year,trades.back.time.month,1))
-//                .fwdRange(everyDuration!Date (0,1))
-//                .map!(a => flows.filter!(b => b.time.year==a.year && b.time.month==a.month)
-//                                .map!(b => b.value)
-//                                .sum);
 }
 
 ///
@@ -915,6 +933,26 @@ unittest {
                       Trade(DateTime(Date(2002,2,2)),4.5,Action.sell)
                       ];
 }
+
+auto profitPerDay (T) (in T trades, double cost, double brokerage=0) {
+    // aim is to have cost remain throughout
+
+    auto rvalue = cost;
+
+    auto tradeValue(T) (T pair) {
+        import std.math : floor;
+        auto quantity = floor((cost-brokerage) / pair[0].price);
+        return ((pair[1].price * quantity) - brokerage) -     // sell
+               ((pair[0].price * quantity) + brokerage);      // buy
+    }
+
+    return trades.chunks(2)
+                 .map!(a => tradeValue(a))
+                 .sum /
+                 trades.daysHeld;
+}
+
+
 
 auto weighted(T) (T profitRange) pure {
      return profitRange.enumerate(1)
@@ -991,4 +1029,49 @@ auto tradeAction(T) (T data, string ignore="No") { // TODO investigate adding no
     }
 
     return Action.none;
+}
+
+auto macdSignals(Range) (Range rng) {
+    struct MacdSignals(T) {
+        T rng;
+        auto action = Action.none;
+
+        this (T r) {
+            rng = r;
+        }
+
+        auto front() {
+            if ([rng.front[0],rng.front[1],rng.front[2]].canFind!(a => a.isNaN)) {
+                return Action.none;
+            } else {
+                return action;
+            }
+        }
+
+        auto empty() {
+            return rng.empty;
+        }
+
+        auto popFront() {
+            auto oldPoint = rng.front;
+            rng.popFront;
+            if (!rng.empty) {
+                auto newPoint = rng.front;
+                if (oldPoint[2] <= (oldPoint[0]-oldPoint[1]) &&
+                    newPoint[2] > (newPoint[0] - newPoint[1])) {
+                    action = Action.buy;
+                } else if (oldPoint[2] >= (oldPoint[0]-oldPoint[1]) &&
+                           newPoint[2] < (newPoint[0] - newPoint[1])) {
+                    action = Action.sell;
+                } else {
+                    action = Action.none;
+                }
+            }
+        }
+    }
+    return MacdSignals!Range (rng);
+}
+
+unittest {
+
 }
