@@ -1,6 +1,6 @@
 # Stocky
 
-Stocky is a library to help construct and testing stock trading stratigies (backtesting).
+Stocky is a library to help construct and testing stock trading strategies (backtesting).
 
 # Installation
 
@@ -38,8 +38,6 @@ auto macdStrategy =
         .map!(a => Trade(cast(DateTime)a[1].time,a[1].close,a[0]))
                                    // convert to Trade type, so can use
                                    // other stocky lib functions
-        .drop(200)                 // allow moving averages to become
-                                   // "fully calculated"
         .filter!(a => a.action!=Action.none)
                                    // only process buy or sell
         .array
