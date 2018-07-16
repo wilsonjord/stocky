@@ -378,21 +378,6 @@ auto rsi(string field="",Range) (Range rng, int period) {
                              .map!(a => getLoss(a)));
 
     return zip(gains,losses).map!(a => 100 - (100 / (1 + (a[0] / a[1]))));
-
-    //gains.writeln;
-    //losses.writeln;
-    //readln;
-//    auto firstValueRS = (myRng.drop(nas)
-//                              .change
-//                              .filter!(a => a > 0)
-//                              .sum / period) /
-//                        (myRng.drop(nas)
-//                              .change
-//                              .filter!(a => a < 0)
-//                              .sum / period);
-
-    //myRng.drop(nas).cumulativeFold!((a,b) => 100 - (100/(1 + a))(firstValueRS);
-    //return chain(myRng.take(nas),EMA!(typeof(myRng.enumerate)) (myRng.drop(nas).enumerate,period,seed));
 }
 
 unittest {
