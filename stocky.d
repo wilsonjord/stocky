@@ -257,6 +257,50 @@ unittest {
              .take(3).approxEqual([6.24,7.10,7.99]));
 }
 
+
+/++
+    Params:
+        field = define what member to use for calculation
+        rng = InputRange
+        period = number of time periods to average
+        seed = optional seed, (default value is the first value of rng)
+
+    Returns:
+        A double exponential moving average range
++/
+auto dema(string field="", Range) (Range rng, int period, double seed = double.init) {
+    auto emaRng = rng.ema!field (period,seed).array; // TODO check use of array
+    return zip(emaRng,emaRng.ema!field(period))
+                .map!(a => 2*a[0] - a[1]);
+}
+
+unittest {
+    //[7,1,9,3,3,1,4,6,3,7,7,5,2,9,8,9,3,9,9,7,4,7,6,6,3,4,3,6,7,4,9,1].ema(4).writeln;
+    //[7,1,9,3,3,1,4,6,3,7,7,5,2,9,8,9,3,9,9,7,4,7,6,6,3,4,3,6,7,4,9,1].dema(4).writeln;
+}
+
+/++
+    Params:
+        field = define what member to use for calculation
+        rng = InputRange
+        period = number of time periods to average
+        seed = optional seed, (default value is the first value of rng)
+
+    Returns:
+        A triple exponential moving average range
++/
+auto tema(string field="", Range) (Range rng, int period, double seed = double.init) {
+    auto emaRng = rng.ema!field (period,seed).array; // TODO check use of array
+    return zip(emaRng,emaRng.ema!field(period),emaRng.ema!field(period).ema!field(period))
+                .map!(a => 3*a[0] - 3*a[1] + a[2]);
+}
+
+unittest {
+    //[7,1,9,3,3,1,4,6,3,7,7,5,2,9,8,9,3,9,9,7,4,7,6,6,3,4,3,6,7,4,9,1].ema(4).writeln;
+    //[7,1,9,3,3,1,4,6,3,7,7,5,2,9,8,9,3,9,9,7,4,7,6,6,3,4,3,6,7,4,9,1].dema(4).writeln;
+    //[7,1,9,3,3,1,4,6,3,7,7,5,2,9,8,9,3,9,9,7,4,7,6,6,3,4,3,6,7,4,9,1].tema(4).writeln;
+}
+
 auto createK(Range) (Range rng, int windowSize) if (isNumeric!(ElementType!Range)) {
     return 0.to!(ElementType!Range)
             .repeat(windowSize-1)   // fill result with 0's until t = windowSize
@@ -378,6 +422,21 @@ auto rsi(string field="",Range) (Range rng, int period) {
                              .map!(a => getLoss(a)));
 
     return zip(gains,losses).map!(a => 100 - (100 / (1 + (a[0] / a[1]))));
+
+    //gains.writeln;
+    //losses.writeln;
+    //readln;
+//    auto firstValueRS = (myRng.drop(nas)
+//                              .change
+//                              .filter!(a => a > 0)
+//                              .sum / period) /
+//                        (myRng.drop(nas)
+//                              .change
+//                              .filter!(a => a < 0)
+//                              .sum / period);
+
+    //myRng.drop(nas).cumulativeFold!((a,b) => 100 - (100/(1 + a))(firstValueRS);
+    //return chain(myRng.take(nas),EMA!(typeof(myRng.enumerate)) (myRng.drop(nas).enumerate,period,seed));
 }
 
 unittest {
