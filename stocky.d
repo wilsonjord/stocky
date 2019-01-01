@@ -52,6 +52,31 @@ alias Symbol = Tuple!(string,"exchange",string,"name");
 +/
 alias EODRecord = Tuple!(DateTime,"time",double,"open",double,"high",double,"low",double,"close",int,"volumn");
 
+/++
+    Read Tiingo format JSON file
++/
+
+auto readJsonTiingo (string fileName) {
+    import std.file : readText;
+    import std.json : parseJSON;
+    import std.datetime.date : Date;
+    import std.typecons : tuple;
+    
+
+    auto json = fileName.readText.parseJSON;
+    return json.array
+               .map!(a => a.object)
+               .map!(a => EODRecord(DateTime.fromISOExtString(a["date"].str[0..19]),
+                                    a["adjOpen"].floating,
+                                    a["adjHigh"].floating,
+                                    a["adjLow"].floating,
+                                    a["adjClose"].floating,
+                                    a["adjVolume"].integer))
+               .array
+               .sort!((a,b) => a.time < b.time);
+            
+}
+
 auto createSMA(T) (T rng, int period) {
     struct SMA(Range) if (isNumeric!(ElementType!Range)) {
         Range rng;
