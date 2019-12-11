@@ -119,7 +119,7 @@ auto readJsonTiingo (string fileName) {
     import std.datetime.date : Date;
     import std.typecons : tuple;
     
-	//fileName.writeln;
+	fileName.writeln;
     auto json = fileName.readText.parseJSON;
 	
 
@@ -132,23 +132,12 @@ auto readJsonTiingo (string fileName) {
                                     a["adjClose"].floating,
                                     a["adjVolume"].integer))
                .array
-               .sort!((a,b) => a.time < b.time);
+               .sort!((a,b) => a.time < b.time)
+			   .array;
             
 }
 
-auto tradify(T) (T rng) {
-	ElementType!T[] rvalue;
-	if (rng.empty) return rvalue;
-	if (rng.count==1) return rvalue;
-	if (rng.count==2 && rng.front.action!=Action.buy) return rvalue;
 
-	rvalue = rng;
-
-	if (rvalue.front.action==Action.sell) rvalue.popFront;
-	if (rvalue.back.action==Action.buy) rvalue.popBack;
-
-	return rvalue;
-}
 
 auto dollars(T) (T trade, double amount, double brokerage) {
 	auto quan = ((amount-brokerage) / trade[0].price).to!int; // rounds down
@@ -738,6 +727,7 @@ auto fullMACDWithRSIWithSharpe(T,S) (T market, S fastAverage, S slowAverage, S s
 		}
 	}
 
+
 	writeln (((capital+holdings.byValue.map!(a => (a.price*a.quantity)-Brokerage).sum) - StartingCapital) / StartingCapital);
 	{
 		auto file = File("signals.csv","w");
@@ -756,10 +746,50 @@ auto fullMACDWithRSIWithSharpe(T,S) (T market, S fastAverage, S slowAverage, S s
 }
 
 void main() {
-
 	//import selector;
-	//selected("signals-bollinger.csv");
+	//moneyManagement("signals-bollinger - Copy.csv",PickStrategy.weightedReturnsAll);
+	//returnOverTime("signals-bollinger.csv",fastAverage,slowAverage);
+	
 	//return;
+
+
+
+	import std.file : dirEntries, SpanMode;
+	import std.random : randomCover;
+	auto market = dirEntries (`g:\tiingo\`, SpanMode.shallow)
+					    .filter!(a => a.name.canFind("json") && !a.name.canFind("SPY.json"))
+						.array
+						.randomCover
+						.take(5_000)
+						//.take(5)
+						.map!(a => a.name)
+						.chain([`g:\tiingo\SPY.json`])
+						.map!(a => tuple!("symbol","records")
+										 (a.splitter(`\`).array.back.replace(".json",""),a.readJsonTiingo))
+						.array
+						//.tee!((a) {if (a.records.length < 100) writeln (a.symbol," less than 100 records, ignoring");})
+						.filter!(a => a.records.length >= 100)
+						.array;
+
+	writeln ("generating moving averages");
+	double[DateTime][string] fastAverage;
+	double[DateTime][string] slowAverage;
+	double[DateTime][string] signal;
+	double[DateTime][string] rsi;
+	foreach (stock; market) {
+		auto fast = stock.records.ema!"close"(50).array;
+		auto slow = stock.records.sma!"close"(100).array;
+		auto _signal = zip(fast,slow).map!(a => a[0] - a[1]).ema(9).array;
+		auto _rsi = stock.records.rsi!"close"(14).array;
+		foreach (avg; zip(stock.records.map!(a => a.time),fast,slow,_signal,_rsi)) {
+			fastAverage[stock.symbol][avg[0]] = avg[1];
+			slowAverage[stock.symbol][avg[0]] = avg[2];
+			signal[stock.symbol][avg[0]] = avg[3];
+			rsi[stock.symbol][avg[0]] = avg[4];
+		}
+	}
+
+	
 
 
 
@@ -771,21 +801,7 @@ void main() {
 	alias Trades = Trade[];
 
 	
-	import std.file : dirEntries, SpanMode;
-	import std.random : randomCover;
-	auto market = dirEntries (`g:\tiingo\`, SpanMode.shallow)
-					    .filter!(a => a.name.canFind("json") && !a.name.canFind("SPY.json"))
-						.array
-						.randomCover
-						.take(5000)
-						.map!(a => a.name)
-						.chain([`g:\tiingo\SPY.json`])
-						.map!(a => tuple!("symbol","records")
-										 (a.splitter(`\`).array.back.replace(".json",""),a.readJsonTiingo.array))
-						//.tee!((a) {if (a.records.length < 100) writeln (a.symbol," less than 100 records, ignoring");})
-						.filter!(a => a.records.length >= 100)
-						.array;
-
+	
 	writeln ("generating ratios");
 
 	double[DateTime][string] sharpeRatios;
@@ -806,23 +822,7 @@ void main() {
 
 	writeln ("done");
 
-	writeln ("generating moving averages");
-	double[DateTime][string] fastAverage;
-	double[DateTime][string] slowAverage;
-	double[DateTime][string] signal;
-	double[DateTime][string] rsi;
-	foreach (stock; market) {
-		auto fast = stock.records.ema!"close"(12).array;
-		auto slow = stock.records.sma!"close"(26).array;
-		auto _signal = zip(fast,slow).map!(a => a[0] - a[1]).ema(9).array;
-		auto _rsi = stock.records.rsi!"close"(14).array;
-		foreach (avg; zip(stock.records.map!(a => a.time),fast,slow,_signal,_rsi)) {
-			fastAverage[stock.symbol][avg[0]] = avg[1];
-			slowAverage[stock.symbol][avg[0]] = avg[2];
-			signal[stock.symbol][avg[0]] = avg[3];
-			rsi[stock.symbol][avg[0]] = avg[4];
-		}
-	}
+	
 
 
 	// REALTIME
@@ -834,6 +834,11 @@ void main() {
 	auto y = x[1].results.array.sort.array.drop(20).dropBack(20);
 	y.mean.writeln;
 
+	
+	import selector;
+	selected("signals-bollinger.csv");
+	
+	
 	return;
 	
 	
@@ -849,7 +854,7 @@ void main() {
 	writeln;
 
 
-	{
+/+ 	{
 		/+ auto results = generate!(() => market.maWithLookback(300,30,StartTime,EndTime)).take(100)
 								.map!(a => tuple(a[0],a[1].results))
 								.array; +/
@@ -889,7 +894,7 @@ void main() {
 		}
 		//trade.map!(a => a[1]).joiner.array.sort!((a,b) => a.time < b.time).chunkBy!((a,b) => a.time.year==b.time.year).map!(a => a.count).mean.writeln;
 		
-	}
+	} +/
 	
 	/+ double[string] tmp;
 	foreach (records; allRecords) {

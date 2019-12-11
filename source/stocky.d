@@ -54,6 +54,21 @@ alias Symbol = Tuple!(string,"exchange",string,"name");
 +/
 alias EODRecord = Tuple!(DateTime,"time",double,"open",double,"high",double,"low",double,"close",size_t,"volumn");
 
+auto tradify(T) (T rng) {
+	ElementType!T[] rvalue;
+	if (rng.empty) return rvalue;
+	if (rng.count==1) return rvalue;
+	if (rng.count==2 && rng.front.action!=Action.buy) return rvalue;
+
+	rvalue = rng;
+
+	if (rvalue.front.action==Action.sell) rvalue.popFront;
+	if (rvalue.back.action==Action.buy) rvalue.popBack;
+
+	return rvalue;
+}
+
+
 auto createSMA(T) (T rng, int period) {
     struct SMA(Range) if (isNumeric!(ElementType!Range)) {
         Range rng;
@@ -1245,6 +1260,7 @@ auto staticInvest(T) (in T trades, double invest, double brokerage=0) pure {
 enum Action {buy,sell,none}
 
 alias Trade = Tuple!(DateTime,"time",double,"price",Action,"action");
+alias NamedTrade = Tuple!(string,"symbol",DateTime,"time",double,"price",Action,"action");
 auto completedOnly(Range) (Range trades) {
     auto rvalue = trades.filter!(a => a.action != Action.none)
                         .uniq!((a,b) => a.action == b.action)
