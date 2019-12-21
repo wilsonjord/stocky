@@ -36,61 +36,61 @@ auto weighted(T) (T data) { // TODO only seems to work with arrays, make it work
 			   .sum / iota(1,data.count+1).sum;
 }
 
-extern(C) {
-	alias TA_RetCode = size_t;
-	alias TA_MAType = size_t;
-
-	auto TA_MAType_SMA = 0;
-	auto TA_MAType_EMA = 1;
-	auto TA_MAType_WMA = 2;
-	auto TA_MAType_DEMA = 3;
-	auto TA_MAType_TEMA = 4;
-	
-	TA_RetCode TA_EMA (size_t startIdx,
-							  size_t endIdx,
-							  double* inReal,
-							  size_t optInTimePeriod,
-							  size_t* outBegIdx,
-							  size_t* outNBElement,
-							  double* outReal);
-
-	TA_RetCode TA_MA (size_t startIdx,
-							  size_t endIdx,
-							  double* inReal,
-							  size_t optInTimePeriod,
-							  size_t optInMAType,
-							  size_t* outBegIdx,
-							  size_t* outNBElement,
-							  double* outReal);
-
-	TA_RetCode TA_RSI (size_t startIdx,
-							  size_t endIdx,
-							  double* inReal,
-							  size_t optInTimePeriod,
-							  size_t* outBegIdx,
-							  size_t* outNBElement,
-							  double* outReal);
-
-	TA_RetCode TA_STOCH (size_t startIdx,
-							  size_t endIdx,
-							  double* inHigh,
-							  double* inLow,
-							  double* inClose,
-							  int optInFastK_Period,
-							  int optInSlowK_period,
-							  TA_MAType optInSlowK_MAType,
-							  int optInSlowD_Period,
-							  TA_MAType optInSlowD_MAType,
-							  size_t* outBegIdx,
-							  size_t* outNBElement,
-							  double* outSlowK,
-							  double* outSlowD);
-
-	size_t TA_EMA_Lookback (size_t optInTimePeriod);
-	TA_RetCode TA_Initialize();
-	TA_RetCode TA_Shutdown();
-
-}
+//extern(C) {
+//	alias TA_RetCode = size_t;
+//	alias TA_MAType = size_t;
+//
+//	auto TA_MAType_SMA = 0;
+//	auto TA_MAType_EMA = 1;
+//	auto TA_MAType_WMA = 2;
+//	auto TA_MAType_DEMA = 3;
+//	auto TA_MAType_TEMA = 4;
+//	
+//	TA_RetCode TA_EMA (size_t startIdx,
+//							  size_t endIdx,
+//							  double* inReal,
+//							  size_t optInTimePeriod,
+//							  size_t* outBegIdx,
+//							  size_t* outNBElement,
+//							  double* outReal);
+//
+//	TA_RetCode TA_MA (size_t startIdx,
+//							  size_t endIdx,
+//							  double* inReal,
+//							  size_t optInTimePeriod,
+//							  size_t optInMAType,
+//							  size_t* outBegIdx,
+//							  size_t* outNBElement,
+//							  double* outReal);
+//
+//	TA_RetCode TA_RSI (size_t startIdx,
+//							  size_t endIdx,
+//							  double* inReal,
+//							  size_t optInTimePeriod,
+//							  size_t* outBegIdx,
+//							  size_t* outNBElement,
+//							  double* outReal);
+//
+//	TA_RetCode TA_STOCH (size_t startIdx,
+//							  size_t endIdx,
+//							  double* inHigh,
+//							  double* inLow,
+//							  double* inClose,
+//							  int optInFastK_Period,
+//							  int optInSlowK_period,
+//							  TA_MAType optInSlowK_MAType,
+//							  int optInSlowD_Period,
+//							  TA_MAType optInSlowD_MAType,
+//							  size_t* outBegIdx,
+//							  size_t* outNBElement,
+//							  double* outSlowK,
+//							  double* outSlowD);
+//
+//	size_t TA_EMA_Lookback (size_t optInTimePeriod);
+//	TA_RetCode TA_Initialize();
+//	TA_RetCode TA_Shutdown();
+//
+//}
 
 enum EndTime = DateTime(Date(2020,1,1));
 enum StartTime = DateTime(Date(2000,1,1));
@@ -120,20 +120,25 @@ auto readJsonTiingo (string fileName) {
     import std.typecons : tuple;
     
 	fileName.writeln;
-    auto json = fileName.readText.parseJSON;
-	
+    
+	try {
+		auto json = fileName.readText.parseJSON;
+		
 
-    return json.array
-               .map!(a => a.object)
-               .map!(a => EODRecord(DateTime.fromISOExtString(a["date"].str[0..19]),
-                                    a["adjOpen"].floating,
-                                    a["adjHigh"].floating,
-                                    a["adjLow"].floating,
-                                    a["adjClose"].floating,
-                                    a["adjVolume"].integer))
-               .array
-               .sort!((a,b) => a.time < b.time)
-			   .array;
+		return json.array
+				   .map!(a => a.object)
+				   .map!(a => EODRecord(DateTime.fromISOExtString(a["date"].str[0..19]),
+										a["adjOpen"].floating,
+										a["adjHigh"].floating,
+										a["adjLow"].floating,
+										a["adjClose"].floating,
+										a["adjVolume"].integer))
+				   .array
+				   .sort!((a,b) => a.time < b.time)
+				   .array;
+	} catch (Exception ex) {
+		return null;
+	}
             
 }
 
@@ -646,6 +651,14 @@ auto bollingerBandsWithRSI(T,R,S) (T market, R bands, S rsi, S sharpeRatios, Dat
 
 }
 
+auto simpleMeanReversion(T) (T, DateTime start, DateTime end) {
+	auto capital = StartingCapital;
+	
+	ExecutedTrade[string] holdings;
+	ExecutedTrade[] rvalue;
+
+
+}
 
 auto fullMACDWithRSIWithSharpe(T,S) (T market, S fastAverage, S slowAverage, S signal, S rsi, S sharpeRatios, DateTime start, DateTime end) {
 	auto capital = StartingCapital;
@@ -745,32 +758,114 @@ auto fullMACDWithRSIWithSharpe(T,S) (T market, S fastAverage, S slowAverage, S s
 	return tuple(((capital+holdings.byValue.map!(a => (a.price*a.quantity)-Brokerage).sum) - StartingCapital) / StartingCapital,rvalue);
 }
 
+void loadDatabase() {
+	import d2sqlite3;
+	import std.file : dirEntries, SpanMode, readText;
+	import std.json : parseJSON;
+	import std.path : baseName, stripExtension;
+	
+	auto db = Database("/home/jordan/databases/tiingo-eod.db");
+	auto statement = db.prepare ("insert into eod
+								  values (:symbol, :date, :close, :high, :low, :open, :volumn,
+									  	  :adjClose, :adjHigh, :adjLow, :adjOpen, :adjVolumn,
+										  :divCash, :splitFactor)");
+
+	db.begin;
+	foreach (entry; dirEntries (`/mnt/g/tiingo`,SpanMode.shallow)) {
+		entry.name.writeln;
+		try {
+			auto json = entry.name.readText.parseJSON;
+			foreach (obj; json.array) {
+				statement.inject (entry.name.stripExtension.baseName,
+							      obj["date"].str,
+								  obj["close"].floating,
+								  obj["high"].floating,
+								  obj["low"].floating,
+								  obj["open"].floating,
+								  obj["volume"].integer,
+								  obj["adjClose"].floating,
+								  obj["adjHigh"].floating,
+								  obj["adjLow"].floating,
+								  obj["adjVolume"].integer,
+								  obj["divCash"].floating,
+								  obj["splitFactor"].floating);
+			}
+		} catch (Exception ex) {
+			ex.msg.writeln;
+		}
+	}
+	db.commit;
+}
+
 void main() {
+	//loadDatabase;
+	//return;
+
 	//import selector;
 	//moneyManagement("signals-bollinger - Copy.csv",PickStrategy.weightedReturnsAll);
 	//returnOverTime("signals-bollinger.csv",fastAverage,slowAverage);
 	
 	//return;
 
+	import d2sqlite3;
+
+	writeln ("Loading database...");
+	auto db = Database("/home/jordan/databases/tiingo-eod.db");
+	
+	alias Records = Tuple!(string,"symbol",EODRecord[],"records");
+	Records[] market;
+
+	foreach (symbol; db.execute("select distinct symbol from eod")
+					   .map!(a => a["symbol"].as!string)
+					   .array
+					   .randomCover
+					   .take(500)) {
+
+		symbol.writeln;
+		import std.format : format;
+		market ~= Records(symbol,
+						  db.execute(format("select * from eod where symbol = '%s'",symbol))
+						    .map!(a => 
+									  EODRecord (DateTime.fromISOExtString(a["date"].as!string[0..19]),
+										  		 a["adjOpen"].as!double,
+												 a["adjHigh"].as!double,
+												 a["adjLow"].as!double,
+												 a["adjClose"].as!double,
+												 a["adjVolumn"].as!int))
+							.array
+							.sort!((a,b) => a.time < b.time)
+							.array);
+
+	}
 
 
-	import std.file : dirEntries, SpanMode;
-	import std.random : randomCover;
-	auto market = dirEntries (`g:\tiingo\`, SpanMode.shallow)
-					    .filter!(a => a.name.canFind("json") && !a.name.canFind("SPY.json"))
-						.array
-						.randomCover
-						.take(5_000)
-						//.take(5)
-						.map!(a => a.name)
-						.chain([`g:\tiingo\SPY.json`])
-						.map!(a => tuple!("symbol","records")
-										 (a.splitter(`\`).array.back.replace(".json",""),a.readJsonTiingo))
-						.array
-						//.tee!((a) {if (a.records.length < 100) writeln (a.symbol," less than 100 records, ignoring");})
-						.filter!(a => a.records.length >= 100)
-						.array;
+// 	auto currentSymbol="";
+//	auto market = db.execute("select * from eod order by symbol, date")
+//					.tee!((a) {
+//								if (a["symbol"].as!string != currentSymbol) {
+//									   	currentSymbol = a["symbol"].as!string;
+//										currentSymbol.writeln;
+//							   	}
+//							  })
+//					.map!(a => tuple!("symbol","record")
+//									 (a["symbol"].as!string,
+//									  EODRecord (DateTime.fromISOExtString(a["date"].as!string[0..19]),
+//										  		 a["adjOpen"].as!double,
+//												 a["adjHigh"].as!double,
+//												 a["adjLow"].as!double,
+//												 a["adjClose"].as!double,
+//												 a["adjVolumn"].as!int)))
+//					.array
+//					//.multiSort!((a,b) => a.symbol < b.symbol, (a,b) => a.record.time < b.record.time)
+//					.sort!((a,b) => a.symbol < b.symbol)
+//					.chunkBy!((a,b) => a.symbol == b.symbol)
+//					.map!(a => tuple!("symbol","records")
+//									 (a.front.symbol, a.map!(b => b.record).array))
+//					.array;
 
+
+
+	
 	writeln ("generating moving averages");
 	double[DateTime][string] fastAverage;
 	double[DateTime][string] slowAverage;
@@ -794,9 +889,9 @@ void main() {
 
 
 	scope(exit) {
-		TA_Shutdown;
+		//TA_Shutdown;
 	}
-	TA_Initialize;
+	//TA_Initialize;
 
 	alias Trades = Trade[];
 

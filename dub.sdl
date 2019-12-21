@@ -4,6 +4,5 @@ authors "Jordan K. Wilson"
 copyright "Copyright © 2018, Jordan K. Wilson"
 license "proprietary"
 dependency "dstats" version="~>1.0.5"
-lflags `-L\development\ta-lib\c\lib`
-libs "ta_func_csr" "ta_common_csr"
+dependency "d2sqlite3" version="~>0.18.3"
 buildRequirements "silenceWarnings"

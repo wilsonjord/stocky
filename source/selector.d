@@ -286,12 +286,14 @@ void selected(string file) {
           .take(30)
           .array
           .multiSort!((a,b) => a[0].trade.time > b[0].trade.time, (a,b) => a[1][0] > b[1][0])
-          .each!(a => writeln (format("%s\t%s\t%s\t%s\t%s",
-                                       a[0].symbol,
-                                       a[0].trade.time,
-                                       a[0].trade.price,
-                                       a[0].trade.action,
-                                       a[1])));
+		  .array
+          .each!(a => writeln(a));
+		  //.each!(a => writeln (format("%s\t%s\t%s\t%s\t%s",
+          //                             a[0].symbol,
+          //                             a[0].trade.time,
+          //                             a[0].trade.price,
+          //                             a[0].trade.action,
+          //                             a[1])));
  
 
     /* double[string] selectionMetric;
