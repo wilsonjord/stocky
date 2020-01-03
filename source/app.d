@@ -12,6 +12,7 @@ import std.math : isNaN;
 
 import stocky;
 import dstats : stdev, median;
+import commandr;
 
 auto getRandomTrade(T) (T records) {
 	auto start = uniform(0,records.length-2);
@@ -92,7 +93,7 @@ auto weighted(T) (T data) { // TODO only seems to work with arrays, make it work
 //
 //}
 
-enum EndTime = DateTime(Date(2020,1,1));
+enum EndTime = DateTime(Date(2040,1,1));
 enum StartTime = DateTime(Date(2000,1,1));
 
 auto macdSignal(T) (T trade) {
@@ -562,6 +563,11 @@ auto bollingerBandsWithRSI(T,R,S) (T market, R bands, S rsi, S sharpeRatios, Dat
 	ExecutedTrade[] rvalue;
 
 	auto getSignal(A,B) (A symbol, B time, double price) {
+		if (symbol !in bands) {
+			symbol.writeln;
+			return Action.none;
+		}
+
 		auto band = bands[symbol].get(time,Band.init);
 		auto rsi = rsi[symbol].get(time,double.nan);
 		
@@ -786,6 +792,7 @@ void loadDatabase() {
 								  obj["adjClose"].floating,
 								  obj["adjHigh"].floating,
 								  obj["adjLow"].floating,
+								  obj["adjOpen"].floating,
 								  obj["adjVolume"].integer,
 								  obj["divCash"].floating,
 								  obj["splitFactor"].floating);
@@ -797,7 +804,15 @@ void loadDatabase() {
 	db.commit;
 }
 
-void main() {
+void main(string[] args) {
+	auto cmdline = new Program("stocky")
+						.summary("Stock Analyser")
+						.author("Jordan K. Wilson <wilsonjord@gmail.com>")
+						.add(new Option(null,"list","List of symbols to use")
+								.acceptsFiles)
+						.parse(args);
+
+
 	//loadDatabase;
 	//return;
 
@@ -808,6 +823,7 @@ void main() {
 	//return;
 
 	import d2sqlite3;
+	
 
 	writeln ("Loading database...");
 	auto db = Database("/home/jordan/databases/tiingo-eod.db");
@@ -815,12 +831,22 @@ void main() {
 	alias Records = Tuple!(string,"symbol",EODRecord[],"records");
 	Records[] market;
 
-	foreach (symbol; db.execute("select distinct symbol from eod")
+	
+	auto symbols = (cmdline.option("list") is null) ?
+					 db.execute("select distinct symbol from eod")
 					   .map!(a => a["symbol"].as!string)
+					   //.filter!(a => a == "SNN")
 					   .array
 					   .randomCover
-					   .take(500)) {
+					   .take(5000)
+					   .array :
+					 File(cmdline.option("list"),"r") // no header
+					   .byLine
+					   .map!(a => a.to!string)
+					   .filter!(a => !a.empty)
+					   .array;
 
+	foreach (symbol; symbols) {
 		symbol.writeln;
 		import std.format : format;
 		market ~= Records(symbol,
@@ -831,7 +857,7 @@ void main() {
 												 a["adjHigh"].as!double,
 												 a["adjLow"].as!double,
 												 a["adjClose"].as!double,
-												 a["adjVolumn"].as!int))
+												 a["adjVolumn"].as!size_t))
 							.array
 							.sort!((a,b) => a.time < b.time)
 							.array);
@@ -932,7 +958,7 @@ void main() {
 	
 	import selector;
 	selected("signals-bollinger.csv");
-	
+
 	
 	return;
 	

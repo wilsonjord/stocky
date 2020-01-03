@@ -1,6 +1,7 @@
 {
 	"fileVersion": 1,
 	"versions": {
+		"commandr": "0.1.0",
 		"d2sqlite3": "0.18.3",
 		"dstats": "1.0.5"
 	}
