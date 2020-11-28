@@ -51,6 +51,7 @@ alias Symbol = Tuple!(string,"exchange",string,"name");
     Main data type to store EOD data for a stock
 +/
 alias EODRecord = Tuple!(DateTime,"time",double,"open",double,"high",double,"low",double,"close",int,"volumn");
+alias EODRecord2 = Tuple!(DateTime,"time",double,"open",double,"high",double,"low",double,"close",int,"volumn",double,"divReturn");
 
 /++
     Read Tiingo format JSON file

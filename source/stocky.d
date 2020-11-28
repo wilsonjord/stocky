@@ -53,6 +53,7 @@ alias Symbol = Tuple!(string,"exchange",string,"name");
     Main data type to store EOD data for a stock
 +/
 alias EODRecord = Tuple!(DateTime,"time",double,"open",double,"high",double,"low",double,"close",size_t,"volumn");
+alias EODRecord2 = Tuple!(DateTime,"time",double,"open",double,"high",double,"low",double,"close",size_t,"volumn",double,"divReturn");
 
 auto tradify(T) (T rng) {
 	ElementType!T[] rvalue;

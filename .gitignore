@@ -1,0 +1,15 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/stocky
+stocky.so
+stocky.dylib
+stocky.dll
+stocky.a
+stocky.lib
+stocky-test-*
+*.exe
+*.o
+*.obj
+*.lst
