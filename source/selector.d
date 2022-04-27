@@ -197,7 +197,7 @@ auto moneyManagement(string file, PickStrategy ps) {
 
             auto y = x.filter!(a => !a[1].isNull).array;
             assert (!y.empty);
-            auto z = y.sort!((a,b) => a[1] > b[1]);
+            auto z = y.sort!((a,b) => a[1].get > b[1].get);
             auto metrics = z.array;
             
             // get return
