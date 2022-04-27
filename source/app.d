@@ -39,61 +39,6 @@ auto weighted(T)(T data) { // TODO only seems to work with arrays, make it work 
 
 alias Records = Tuple!(string, "symbol", EODRecord[], "records");
 alias Records2 = Tuple!(string, "symbol", EODRecord2[], "records");
-//extern(C) {
-//  alias TA_RetCode = size_t;
-//  alias TA_MAType = size_t;
-//
-//  auto TA_MAType_SMA = 0;
-//  auto TA_MAType_EMA = 1;
-//  auto TA_MAType_WMA = 2;
-//  auto TA_MAType_DEMA = 3;
-//  auto TA_MAType_TEMA = 4;
-//  
-//  TA_RetCode TA_EMA (size_t startIdx,
-//                            size_t endIdx,
-//                            double* inReal,
-//                            size_t optInTimePeriod,
-//                            size_t* outBegIdx,
-//                            size_t* outNBElement,
-//                            double* outReal);
-//
-//  TA_RetCode TA_MA (size_t startIdx,
-//                            size_t endIdx,
-//                            double* inReal,
-//                            size_t optInTimePeriod,
-//                            size_t optInMAType,
-//                            size_t* outBegIdx,
-//                            size_t* outNBElement,
-//                            double* outReal);
-//
-//  TA_RetCode TA_RSI (size_t startIdx,
-//                            size_t endIdx,
-//                            double* inReal,
-//                            size_t optInTimePeriod,
-//                            size_t* outBegIdx,
-//                            size_t* outNBElement,
-//                            double* outReal);
-//
-//  TA_RetCode TA_STOCH (size_t startIdx,
-//                            size_t endIdx,
-//                            double* inHigh,
-//                            double* inLow,
-//                            double* inClose,
-//                            int optInFastK_Period,
-//                            int optInSlowK_period,
-//                            TA_MAType optInSlowK_MAType,
-//                            int optInSlowD_Period,
-//                            TA_MAType optInSlowD_MAType,
-//                            size_t* outBegIdx,
-//                            size_t* outNBElement,
-//                            double* outSlowK,
-//                            double* outSlowD);
-//
-//  size_t TA_EMA_Lookback (size_t optInTimePeriod);
-//  TA_RetCode TA_Initialize();
-//  TA_RetCode TA_Shutdown();
-//
-//}
 
 enum EndTime = DateTime(Date(2040, 1, 1));
 enum StartTime = DateTime(Date(2000, 1, 1));
@@ -289,7 +234,6 @@ auto maWithLookbackOrderedBySharpe(T, S)(T market, uint period,
             }
         }
 
-        //foreach (buy; signals.filter!(a => a.tradeSignal.action==Action.buy)) {
         foreach (buy; signals.filter!(a => a.tradeSignal.action == Action.buy)
                 .array
                 .sort!((a, b) => sharpeRatios[a.symbol][a.tradeSignal.time]
@@ -364,13 +308,8 @@ auto longOnlyMACD(T, S)(T market, S fastAverage, S slowAverage,
         }
 
         foreach (buy; signals.filter!(a => a.tradeSignal.action == Action.buy)) {
-            //.array
-            /+ .sort!((a,b) => sharpeRatios[a.symbol].get(a.tradeSignal.time,double.min_normal) >
-                                             sharpeRatios[b.symbol].get(b.tradeSignal.time,double.min_normal))) { +/
-
             if (capital < TradeSize)
                 break;
-            //if (holdings.byKey.count >= maxHoldings) break;
 
             auto sharpeThreshold = sharpeRatios.byValue
                 .map!(a => a.get(buy.tradeSignal.time, double.init))
@@ -453,13 +392,8 @@ auto fullMACD(T, S)(T market, S fastAverage, S slowAverage, S signal,
         }
 
         foreach (buy; signals.filter!(a => a.tradeSignal.action == Action.buy)) {
-            //.array
-            /+ .sort!((a,b) => sharpeRatios[a.symbol].get(a.tradeSignal.time,double.min_normal) >
-                                             sharpeRatios[b.symbol].get(b.tradeSignal.time,double.min_normal))) { +/
-
             if (capital < TradeSize)
                 break;
-            //if (holdings.byKey.count >= maxHoldings) break;
 
             auto sharpeThreshold = sharpeRatios.byValue
                 .map!(a => a.get(buy.tradeSignal.time, double.init))
@@ -475,7 +409,6 @@ auto fullMACD(T, S)(T market, S fastAverage, S slowAverage, S signal,
 
             if (sharpeRatios[buy.symbol].get(buy.tradeSignal.time,
                     double.min_normal) > sharpeThreshold) {
-                //auto tradeSize = (capital / (maxHoldings - holdings.byKey.count)) - Brokerage;
                 auto tradeSize = ((capital >= TradeSize * 2) ? TradeSize : capital) - Brokerage;
                 holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,
                         buy.symbol, (tradeSize - Brokerage) / buy.tradeSignal
@@ -487,11 +420,6 @@ auto fullMACD(T, S)(T market, S fastAverage, S slowAverage, S signal,
         }
     }
 
-    /+ writeln ((capital - StartingCapital) / StartingCapital);
-    auto file = File("trades.csv","w");
-    foreach (trade; rvalue) {
-        file.writeln (trade.symbol,",",trade.time,",",trade.price,",",trade.action);
-    } +/
     return tuple((capital - StartingCapital) / StartingCapital, rvalue);
 }
 
@@ -545,10 +473,6 @@ auto fullMACDWithRSI(T, S)(T market, S fastAverage, S slowAverage,
         }
 
         foreach (buy; signals.filter!(a => a.tradeSignal.action == Action.buy)) {
-            //.array
-            /+ .sort!((a,b) => sharpeRatios[a.symbol].get(a.tradeSignal.time,double.min_normal) >
-                                             sharpeRatios[b.symbol].get(b.tradeSignal.time,double.min_normal))) { +/
-
             if (capital < TradeSize)
                 break;
 
@@ -556,7 +480,6 @@ auto fullMACDWithRSI(T, S)(T market, S fastAverage, S slowAverage,
                 writeln(buy.symbol, " already bought.");
             assert(buy.symbol !in holdings);
 
-            //auto tradeSize = (capital / (maxHoldings - holdings.byKey.count)) - Brokerage;
             auto tradeSize = ((capital >= TradeSize * 2) ? TradeSize : capital) - Brokerage;
             holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,
                     buy.symbol, (tradeSize - Brokerage) / buy.tradeSignal.price);
@@ -640,9 +563,6 @@ auto bollingerBandsWithRSI(T, R, S)(T market, R bands, S rsi,
 
         foreach (buy; signals.filter!(a => a.tradeSignal.action == Action.buy)
                 .array.randomShuffle) {
-            //.array
-            /+ .sort!((a,b) => sharpeRatios[a.symbol].get(a.tradeSignal.time,double.min_normal) >
-                                             sharpeRatios[b.symbol].get(b.tradeSignal.time,double.min_normal))) { +/
 
             if (capital < TradeSize)
                 break;
@@ -651,7 +571,6 @@ auto bollingerBandsWithRSI(T, R, S)(T market, R bands, S rsi,
                 writeln(buy.symbol, " already bought.");
             assert(buy.symbol !in holdings);
 
-            //auto tradeSize = (capital / (maxHoldings - holdings.byKey.count)) - Brokerage;
             auto tradeSize = ((capital >= TradeSize * 2) ? TradeSize : capital) - Brokerage;
             holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,
                     buy.symbol, (tradeSize - Brokerage) / buy.tradeSignal.price);
@@ -662,22 +581,13 @@ auto bollingerBandsWithRSI(T, R, S)(T market, R bands, S rsi,
         }
     }
 
-    //writeln ((capital - StartingCapital) / StartingCapital);
-    /+ {
-        auto file = File("trades.csv","w");
-        foreach (trade; rvalue) {
-            file.writeln (trade.symbol,",",trade.time,",",trade.price,",",trade.action);
-
-        }
-    } +/
-
     {
         auto file = File("signals-bollinger.csv", "w");
         file.writeln("name,time,price,rsi,sharpe,action");
         foreach (trade; chain(holdings.byValue, rvalue)) {
             file.writeln(trade.symbol, ",",
                     trade.time.toISOExtString.splitter("T")
-                    .front.replace("-", "/") //.to!string,",",trade.price,",",rsi[trade.symbol][trade.time],",",sharpeRatios[trade.symbol][trade.time],",",trade.action);
+                    .front.replace("-", "/")
                     .to!string, ",",
                     trade.price, ",", rsi[trade.symbol][trade.time], ",",
                     (trade.symbol in sharpeRatios
@@ -726,18 +636,15 @@ auto rsi75Strategy(T)(T market) {
         foreach (date, close, ma, rsi; zip(stock.date, stock.close, stock.ma, stock
                 .rsi)) {
             if (close < ma && rsi > 75 && !holding) {
-                //writeln ("BUY: ",close);
                 holding = true;
                 start = date;
                 buyPrice = close;
             }
 
             if (rsi < 45 && holding) {
-                //writeln ("SELL: ",close);
                 holding = false;
                 results ~= TradeResult(date, stock.symbol, (date - start)
                         .total!"days", start, (close - buyPrice) / buyPrice);
-                //writeln (date - start);
             }
         }
     }
@@ -811,19 +718,16 @@ auto rsi2Strategy(T)(T market) {
 
             if (close.back > ma.back && rsi[2] < rsi[1]
                     && rsi[1] < rsi[0] && rsi[0] < 60 && rsi[2] < 10 && !holding) {
-                //writeln ("BUY: ",close);
                 holding = true;
                 start = date.back;
                 buyPrice = close.back;
             }
 
             if (rsi.front > 70 && holding) {
-                //writeln ("SELL: ",close);
                 holding = false;
                 results ~= TradeResult(date.front, stock.symbol,
                         (date.front - start)
                         .total!"days", start, (close.front - buyPrice) / buyPrice);
-                //writeln (date - start);
             }
         }
     }
@@ -859,18 +763,15 @@ auto rsi10Strategy(T)(T market) {
         foreach (date, close, ma, rsi, fastMa; zip(stock.date,
                 stock.close, stock.ma, stock.rsi, stock.fastMa)) {
             if (close > ma && rsi < 10 && !holding) {
-                //writeln ("BUY: ",close);
                 holding = true;
                 start = date;
                 buyPrice = close;
             }
 
             if (close > fastMa && holding) {
-                //writeln ("SELL: ",close);
                 holding = false;
                 results ~= TradeResult(date, stock.symbol, (date - start)
                         .total!"days", start, (close - buyPrice) / buyPrice);
-                //writeln (date - start);
             }
         }
     }
@@ -921,7 +822,6 @@ auto emaTrendStrategy(T)(T market, int fast, int slow, int rsiThreshold = 25) {
                 holding = false;
                 results ~= TradeResult(date, stock.symbol, (date - start)
                         .total!"days", start, (close - buyPrice) / buyPrice);
-                //writeln (date - start);
             }
         }
     }
@@ -959,18 +859,15 @@ auto rsi25Strategy(T)(T market) {
         foreach (date, close, ma, rsi; zip(stock.date, stock.close, stock.ma, stock
                 .rsi)) {
             if (close > ma && rsi < 25 && !holding) {
-                //writeln ("BUY: ",stock.symbol," ",close);
                 holding = true;
                 start = date;
                 buyPrice = close;
             }
 
             if (rsi > 55 && holding) {
-                //writeln ("SELL: ",stock.symbol," ",close);
                 holding = false;
                 results ~= TradeResult(date, stock.symbol, (date - start)
                         .total!"days", start, (close - buyPrice) / buyPrice);
-                //writeln (date - start);
             }
         }
     }
@@ -1023,7 +920,6 @@ auto vixStrategy(T)(T market) {
 
     auto ma = vix.sma!"close"(50).array;
     auto fastma = vix.ema!"close"(5).array;
-    //auto fastma = vix.map!(a => a.close).array;
 
     enum Signal {
         above,
@@ -1191,28 +1087,16 @@ auto fullMACDWithRSIWithSharpe(T, S)(T market, S fastAverage, S slowAverage,
             if (capital < TradeSize)
                 break;
 
-            /+          auto sharpeThreshold = sharpeRatios.byValue
-                                               .map!(a => a.get(buy.tradeSignal.time,double.init))
-                                               .filter!(a => !a.isNaN)
-                                               .array
-                                               .sort!((a,b) => a > b)
-                                               .array
-                                               .drop((marketSize*0.2).to!int)
-                                               .front; +/
-
             if (buy.symbol in holdings)
                 writeln(buy.symbol, " already bought.");
             assert(buy.symbol !in holdings);
 
             auto tradeSize = (capital / (maxHoldings - holdings.byKey.count)) - Brokerage;
-            //if (sharpeRatios[buy.symbol].get(buy.tradeSignal.time,double.min_normal) > sharpeThreshold) {
-            //auto tradeSize = ((capital >= TradeSize*2) ? TradeSize : capital) - Brokerage;
             holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,
                     buy.symbol, (tradeSize - Brokerage) / buy.tradeSignal.price);
             capital -= Brokerage;
             capital -= holdings[buy.symbol].quantity * buy.tradeSignal.price;
             assert(capital >= 0);
-            //}
         }
     }
 

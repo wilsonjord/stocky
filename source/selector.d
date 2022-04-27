@@ -41,8 +41,8 @@ void returnOverTime(T)(string file, T fast, T slow) {
         .multiSort!((a, b) => a.symbol < b.symbol, (a, b) => a.time < b.time)
         .chunkBy!((a, b) => a.symbol == b.symbol)
         .map!(a => a.array.tradify)
-        .joiner //.map!(a => tuple(a.front.symbol,a.map!(b => b.trade).array.tradify))
-        .array //.idup
+        .joiner
+        .array
         ;
 
     foreach (pair; signals.chunks(2)) {
@@ -252,20 +252,6 @@ void selected(string file) {
                 .sell);
     }
 
-    /+     trades.byKey
-          .filter!(a => a=="AAL")
-          .map!(a => trades[a].map!(b => tuple!("symbol","trade")(a,b)).array)
-          .joiner
-          .array
-          .sort!((a,b) => a.trade.time < b.trade.time)
-          .map!(a => a.trade)
-          .array
-          .tradify
-          .results
-          .mean
-          .writeln;
-    return; +/
-
     trades.byKey
         .map!(a => trades[a].map!(b => tuple!("symbol", "trade")(a, b)).array)
         .joiner
@@ -279,11 +265,10 @@ void selected(string file) {
         .multiSort!((a,
                 b) => a.tradeAction.trade.time > b.tradeAction.trade.time, (a,
                 b) => a.tradeMetrics.weighted > b.tradeMetrics.weighted)
-        .array //.each!(a => writeln(a));
+        .array
         .each!(a => writeln(format("%s\t%s\t%s\t%s\t%s", a.tradeAction.symbol,
                 a.tradeAction.trade.time, a.tradeAction.trade.price,
                 a.tradeAction.trade.action, a.tradeMetrics.weighted)));
-    //a[0][1])));
 
     trades.byKey
         .map!(a => trades[a].map!(b => tuple!("symbol", "trade")(a, b)).array)
@@ -299,17 +284,10 @@ void selected(string file) {
         .multiSort!((a,
                 b) => a.tradeAction.trade.time > b.tradeAction.trade.time, (a,
                 b) => a.tradeMetrics.weighted > b.tradeMetrics.weighted)
-        .array //.each!(a => writeln(a));
+        .array
         .each!(a => writeln(format("%s\t%s\t%s\t%s\t%s", a.tradeAction.symbol,
                 a.tradeAction.trade.time, a.tradeAction.trade.price,
                 a.tradeAction.trade.action, a.tradeMetrics.weighted)));
-    /* double[string] selectionMetric;
-
-    foreach (symbol; trades.keys)
-
-        selectionMetric[symbol] = symbols.map!(a => format("%s:%s",a,trades[a].wins.weighted)).joiner("\t").writeln;
-
-    } */
 
     return;
 

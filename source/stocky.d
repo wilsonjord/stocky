@@ -246,13 +246,6 @@ auto returns(string field = "", Range)(Range rng, int period) {
     //return createSMA(myRng,period);
 }
 
-unittest {
-    //[1,1,3,4,6,6,5,7,5,6].sharpeRatio(3).writeln;
-    //[1,1,3,4,6,6,5,7,5,6].dailyReturns.writeln;
-    //[1,1,3,4,6,6,5,7,5,6].dailyReturns.sma(3).writeln;
-    //assert(0);
-}
-
 /++
     Params:
         field = define what member to use for calculation
@@ -375,52 +368,6 @@ auto ema(string field = "", Range)(Range rng, int period, double seed = double
     return chain(myRng.take(nas),
             EMA!(typeof(myRng.enumerate))(myRng.drop(nas).enumerate, period, seed));
 }
-
-/+ auto ema(string field="", Range) (Range rng, int period, double seed = double.init) {
-    struct EMA(IndexedRange) {
-        double currentValue;
-        double weighting;
-        IndexedRange rng;
-        bool hasSeed;
-        size_t period;
-        size_t startOfData;
-        this (IndexedRange r, int p, double seed) {
-            rng = r;
-            period=p;
-            weighting = 2.0 / (period+1);
-            hasSeed = !seed.isNaN;
-            if (hasSeed) {
-                currentValue = seed;
-                startOfData = 0;
-            } else {
-                startOfData = period - 1;
-                currentValue = rng.take(period)
-                                  .map!(a => a.value)
-                                  .mean;
-            }
-        }
-
-        auto front() {
-            if (rng.front.index < startOfData) return double.nan;
-            return currentValue;
-        }
-
-        auto popFront() {
-            rng.popFront;
-            if (!rng.empty){
-                if (rng.front.index > startOfData) {
-                    currentValue += (rng.front.value - currentValue)*weighting;
-                }
-            }
-        }
-
-        auto empty() { return rng.empty; }
-    }
-
-    auto myRng = rng.convertRange!field;
-    auto nas = myRng.countUntil!(a => !a.isNaN);
-    return chain(myRng.take(nas),EMA!(typeof(myRng.enumerate)) (myRng.drop(nas).enumerate,period,seed));
-} +/
 
 ///
 unittest {
@@ -631,21 +578,6 @@ auto rsi(string field = "", Range)(Range rng, int period) {
                 a)));
 
     return zip(gains, losses).map!(a => 100 - (100 / (1 + (a[0] / a[1]))));
-
-    //gains.writeln;
-    //losses.writeln;
-    //readln;
-    //    auto firstValueRS = (myRng.drop(nas)
-    //                              .change
-    //                              .filter!(a => a > 0)
-    //                              .sum / period) /
-    //                        (myRng.drop(nas)
-    //                              .change
-    //                              .filter!(a => a < 0)
-    //                              .sum / period);
-
-    //myRng.drop(nas).cumulativeFold!((a,b) => 100 - (100/(1 + a))(firstValueRS);
-    //return chain(myRng.take(nas),EMA!(typeof(myRng.enumerate)) (myRng.drop(nas).enumerate,period,seed));
 }
 
 unittest {
@@ -1315,47 +1247,3 @@ auto simulatedPrice(double price, double mu, double sigma,
             sigma / sqrt(numPeriods.to!double)) * rNormal(0, 1));
 }
 
-//auto macdSignals(Range) (Range rng) {
-//    struct MacdSignals(T) {
-//        T rng;
-//        auto action = Action.none;
-//
-//        this (T r) {
-//            rng = r;
-//        }
-//
-//        auto front() {
-//            if ([rng.front[0],rng.front[1],rng.front[2]].canFind!(a => a.isNaN)) {
-//                return Action.none;
-//            } else {
-//                return action;
-//            }
-//        }
-//
-//        auto empty() {
-//            return rng.empty;
-//        }
-//
-//        auto popFront() {
-//            auto oldPoint = rng.front;
-//            rng.popFront;
-//            if (!rng.empty) {
-//                auto newPoint = rng.front;
-//                if (oldPoint[2] <= (oldPoint[0]-oldPoint[1]) &&
-//                    newPoint[2] > (newPoint[0] - newPoint[1])) {
-//                    action = Action.buy;
-//                } else if (oldPoint[2] >= (oldPoint[0]-oldPoint[1]) &&
-//                           newPoint[2] < (newPoint[0] - newPoint[1])) {
-//                    action = Action.sell;
-//                } else {
-//                    action = Action.none;
-//                }
-//            }
-//        }
-//    }
-//    return MacdSignals!Range (rng);
-//}
-
-unittest {
-
-}
