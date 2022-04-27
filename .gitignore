@@ -9,6 +9,7 @@ stocky.dll
 stocky.a
 stocky.lib
 stocky-test-*
+libstocky.a
 *.exe
 *.o
 *.obj
