@@ -9,37 +9,36 @@ import std.file : readText;
 import std.json : parseJSON;
 import std.conv : to;
 import std.math : isNaN;
-import std.format :format;
+import std.format : format;
 
 import stocky;
 import dstats : stdev, median;
 import commandr;
 
-auto getRandomTrade(T) (T records) {
-    auto start = uniform(0,records.length-2);
-    auto end = uniform(start,records.length-1);
-    return tuple!("start","end")(records[start],records[end]);
+auto getRandomTrade(T)(T records) {
+    auto start = uniform(0, records.length - 2);
+    auto end = uniform(start, records.length - 1);
+    return tuple!("start", "end")(records[start], records[end]);
 }
 
-auto getRandomTradeYear(T) (T records) {
-    auto startRecord = records.filter!(a => a.time < (records.back.time - 365.days))
-                            .array
-                            .randomCover
-                            .front;
-                            
-    auto endRecord = records.find!(a => a.time >= startRecord.time+365.days).front;
+auto getRandomTradeYear(T)(T records) {
+    auto startRecord = records.filter!(
+            a => a.time < (records.back.time - 365.days)).array.randomCover.front;
 
-    return tuple!("time","result")(endRecord.time,(endRecord.close - startRecord.close) / startRecord.close);
+    auto endRecord = records.find!(a => a.time >= startRecord.time + 365.days)
+        .front;
+
+    return tuple!("time", "result")(endRecord.time,
+            (endRecord.close - startRecord.close) / startRecord.close);
 }
 
-auto weighted(T) (T data) { // TODO only seems to work with arrays, make it work with ranges
-    return data.enumerate(1)
-               .map!(a => a.index * a.value)
-               .sum / iota(1,data.count+1).sum;
+auto weighted(T)(T data) { // TODO only seems to work with arrays, make it work with ranges
+    return data.enumerate(1).map!(a => a.index * a.value).sum / iota(1, data
+            .count + 1).sum;
 }
 
-alias Records = Tuple!(string,"symbol",EODRecord[],"records");
-alias Records2 = Tuple!(string,"symbol",EODRecord2[],"records");
+alias Records = Tuple!(string, "symbol", EODRecord[], "records");
+alias Records2 = Tuple!(string, "symbol", EODRecord2[], "records");
 //extern(C) {
 //  alias TA_RetCode = size_t;
 //  alias TA_MAType = size_t;
@@ -96,17 +95,17 @@ alias Records2 = Tuple!(string,"symbol",EODRecord2[],"records");
 //
 //}
 
-enum EndTime = DateTime(Date(2040,1,1));
-enum StartTime = DateTime(Date(2000,1,1));
+enum EndTime = DateTime(Date(2040, 1, 1));
+enum StartTime = DateTime(Date(2000, 1, 1));
 
-auto macdSignal(T) (T trade) {
-    if (((trade[1].fast-trade[1].slow) >= trade[1].signal) &&
-        ((trade[0].fast-trade[0].slow) < trade[0].signal)) {
+auto macdSignal(T)(T trade) {
+    if (((trade[1].fast - trade[1].slow) >= trade[1].signal)
+            && ((trade[0].fast - trade[0].slow) < trade[0].signal)) {
         return Action.buy;
     }
 
-    if (((trade[1].fast-trade[1].slow) <= trade[1].signal) &&
-        ((trade[0].fast-trade[0].slow) > trade[0].signal)) {
+    if (((trade[1].fast - trade[1].slow) <= trade[1].signal)
+            && ((trade[0].fast - trade[0].slow) > trade[0].signal)) {
         return Action.sell;
     }
 
@@ -117,64 +116,57 @@ auto macdSignal(T) (T trade) {
     Read Tiingo format JSON file
 +/
 
-auto readJsonTiingo (string fileName) {
+auto readJsonTiingo(string fileName) {
     import std.file : readText;
     import std.json : parseJSON;
     import std.datetime.date : Date;
     import std.typecons : tuple;
-    
+
     fileName.writeln;
-    
+
     try {
         auto json = fileName.readText.parseJSON;
-        
 
         return json.array
-                   .map!(a => a.object)
-                   .map!(a => EODRecord(DateTime.fromISOExtString(a["date"].str[0..19]),
-                                        a["adjOpen"].floating,
-                                        a["adjHigh"].floating,
-                                        a["adjLow"].floating,
-                                        a["adjClose"].floating,
-                                        a["adjVolume"].integer))
-                   .array
-                   .sort!((a,b) => a.time < b.time)
-                   .array;
+            .map!(a => a.object)
+            .map!(a => EODRecord(DateTime.fromISOExtString(
+                    a["date"].str[0 .. 19]), a["adjOpen"].floating,
+                    a["adjHigh"].floating, a["adjLow"].floating,
+                    a["adjClose"].floating, a["adjVolume"].integer))
+            .array
+            .sort!((a, b) => a.time < b.time)
+            .array;
     } catch (Exception ex) {
         return null;
     }
-            
+
 }
 
-
-
-auto dollars(T) (T trade, double amount, double brokerage) {
-    auto quan = ((amount-brokerage) / trade[0].price).to!int; // rounds down
-    auto sell = trade[1].price*quan - brokerage;
-    auto buy = trade[0].price*quan + brokerage;
+auto dollars(T)(T trade, double amount, double brokerage) {
+    auto quan = ((amount - brokerage) / trade[0].price).to!int; // rounds down
+    auto sell = trade[1].price * quan - brokerage;
+    auto buy = trade[0].price * quan + brokerage;
     return sell - buy;
 }
 
-auto maWithLookback(T) (T records, uint ma, uint lb) {
-    
-    auto trades = 
-        zip(records.map!(a => a.close),
-            zip(records,
-                records.ema!"close"(ma)).drop(lb))
-            .map!((a) { auto lookback = a[0];
-                        auto close = a[1][0].close;
-                        auto ema = a[1][1];
-                        if (close > lookback && close > ema)
-                            return Trade(a[1][0].time,close,Action.buy);
-                        if (close < lookback && close < ema)
-                            return Trade(a[1][0].time,close,Action.sell);
-                        return Trade(a[1][0].time,close,Action.none);
-            })
-            .filter!(a => a.action!=Action.none)
-            .uniq!((a,b) => a.action==b.action)
-            .array
-            .tradify;
-            
+auto maWithLookback(T)(T records, uint ma, uint lb) {
+
+    auto trades = zip(records.map!(a => a.close), zip(records,
+            records.ema!"close"(ma)).drop(lb)).map!((a) {
+        auto lookback = a[0];
+        auto close = a[1][0].close;
+        auto ema = a[1][1];
+        if (close > lookback && close > ema)
+            return Trade(a[1][0].time, close, Action.buy);
+        if (close < lookback && close < ema)
+            return Trade(a[1][0].time, close, Action.sell);
+        return Trade(a[1][0].time, close, Action.none);
+    })
+        .filter!(a => a.action != Action.none)
+        .uniq!((a, b) => a.action == b.action)
+        .array
+        .tradify;
+
     return trades;
 }
 
@@ -182,18 +174,17 @@ enum StartingCapital = 500_000.0;
 enum TradeSize = 4000.0;
 enum Brokerage = 8.0;
 
-alias StrategyResults = Tuple!(double,"capitalReturn",
-                               double,"years",
-                               );
+alias StrategyResults = Tuple!(double, "capitalReturn", double, "years",);
 
-auto benchmark(T) (T market,DateTime start, DateTime end) {
-    auto spy = market.find!(a => a.symbol=="SPY").front;
-    auto startPrice = spy.records.find!(a => a.time>=start).front.close;
-    auto endPrice = (spy.records.back.time < end) ? spy.records.back.close : spy.records.find!(a => a.time>=end).front.close;
+auto benchmark(T)(T market, DateTime start, DateTime end) {
+    auto spy = market.find!(a => a.symbol == "SPY").front;
+    auto startPrice = spy.records.find!(a => a.time >= start).front.close;
+    auto endPrice = (spy.records.back.time < end) ? spy.records.back.close
+        : spy.records.find!(a => a.time >= end).front.close;
 
     auto quan = (StartingCapital - Brokerage) / startPrice;
 
-    return ((quan*endPrice - Brokerage) - (quan*startPrice + Brokerage)) / StartingCapital;
+    return ((quan * endPrice - Brokerage) - (quan * startPrice + Brokerage)) / StartingCapital;
 }
 
 struct ExecutedTrade {
@@ -214,106 +205,116 @@ struct ExecutedTrade {
     }
 }
 
-auto maWithLookback(T) (T market, uint period, uint lookback, DateTime start, DateTime end) {
+auto maWithLookback(T)(T market, uint period, uint lookback, DateTime start, DateTime end) {
     auto capital = StartingCapital;
 
     ExecutedTrade[string] holdings;
     ExecutedTrade[] rvalue;
 
+    auto trades = market.map!(a => a.records.maWithLookback(period,
+            lookback).filter!(a => a.time >= start && a.time <= end)
+            .array
+            .tradify
+            .map!(b => tuple!("symbol", "tradeSignal")(a.symbol, b))
+            .array)
+        .joiner
+        .array
+        .randomShuffle
+        .sort!((a, b) => a.tradeSignal.time < b.tradeSignal.time)
+        .chunkBy!((a, b) => a.tradeSignal.time == b.tradeSignal.time);
 
-    auto trades = market.map!(a => a.records
-                                    .maWithLookback(period,lookback)
-                                    .filter!(a => a.time >= start &&
-                                                  a.time <= end)
-                                    .array            
-                                    .tradify
-                                    .map!(b => tuple!("symbol","tradeSignal")
-                                                     (a.symbol,b))
-                                    .array)
-                        .joiner
-                        .array
-                        .randomShuffle
-                        .sort!((a,b) => a.tradeSignal.time < b.tradeSignal.time)
-                        .chunkBy!((a,b) => a.tradeSignal.time==b.tradeSignal.time);
-    
     foreach (signals; trades) {
 
-        foreach (sell; signals.filter!(a => a.tradeSignal.action==Action.sell)) {
+        foreach (sell; signals.filter!(a => a.tradeSignal.action == Action.sell)) {
             if (sell.symbol in holdings) {
-                capital += (holdings[sell.symbol].quantity * sell.tradeSignal.price) - Brokerage;
-                rvalue ~= [holdings[sell.symbol], ExecutedTrade(sell.tradeSignal,sell.symbol,holdings[sell.symbol].quantity)];
+                capital += (holdings[sell.symbol].quantity * sell.tradeSignal
+                        .price) - Brokerage;
+                rvalue ~= [
+                    holdings[sell.symbol],
+                    ExecutedTrade(sell.tradeSignal, sell.symbol,
+                            holdings[sell.symbol].quantity)
+                ];
                 holdings.remove(sell.symbol);
             }
         }
 
-        foreach (buy; signals.filter!(a => a.tradeSignal.action==Action.buy)) {
-            if (capital < TradeSize) break;
-            if (buy.symbol in holdings) writeln (buy.symbol," already bought.");
+        foreach (buy; signals.filter!(a => a.tradeSignal.action == Action.buy)) {
+            if (capital < TradeSize)
+                break;
+            if (buy.symbol in holdings)
+                writeln(buy.symbol, " already bought.");
             assert(buy.symbol !in holdings);
-            auto tradeSize = (capital < TradeSize*2) ? (capital-1) : TradeSize;
-            holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,buy.symbol,(tradeSize - Brokerage) / buy.tradeSignal.price);
+            auto tradeSize = (capital < TradeSize * 2) ? (capital - 1) : TradeSize;
+            holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,
+                    buy.symbol, (tradeSize - Brokerage) / buy.tradeSignal.price);
             capital -= Brokerage;
             capital -= holdings[buy.symbol].quantity * buy.tradeSignal.price;
-            assert (capital >= 0);
+            assert(capital >= 0);
         }
     }
 
-    return tuple((capital - StartingCapital) / StartingCapital,rvalue);
+    return tuple((capital - StartingCapital) / StartingCapital, rvalue);
 }
 
-auto maWithLookbackOrderedBySharpe(T,S) (T market, uint period, uint lookback, DateTime start, DateTime end,S sharpeRatios) {
+auto maWithLookbackOrderedBySharpe(T, S)(T market, uint period,
+        uint lookback, DateTime start, DateTime end, S sharpeRatios) {
     auto capital = StartingCapital;
 
     ExecutedTrade[string] holdings;
     ExecutedTrade[] rvalue;
 
-    
-    
-    auto trades = market.map!(a => a.records
-                                    .maWithLookback(period,lookback)
-                                    .filter!(a => a.time >= start &&
-                                                  a.time <= end)
-                                    .array            
-                                    .tradify
-                                    .map!(b => tuple!("symbol","tradeSignal")
-                                                     (a.symbol,b))
-                                    .array)
-                        .joiner
-                        .array
-                        .sort!((a,b) => a.tradeSignal.time < b.tradeSignal.time)
-                        .chunkBy!((a,b) => a.tradeSignal.time==b.tradeSignal.time);
-        
+    auto trades = market.map!(a => a.records.maWithLookback(period,
+            lookback).filter!(a => a.time >= start && a.time <= end)
+            .array
+            .tradify
+            .map!(b => tuple!("symbol", "tradeSignal")(a.symbol, b))
+            .array)
+        .joiner
+        .array
+        .sort!((a, b) => a.tradeSignal.time < b.tradeSignal.time)
+        .chunkBy!((a, b) => a.tradeSignal.time == b.tradeSignal.time);
+
     foreach (signals; trades) {
 
-        foreach (sell; signals.filter!(a => a.tradeSignal.action==Action.sell)) {
+        foreach (sell; signals.filter!(a => a.tradeSignal.action == Action.sell)) {
             if (sell.symbol in holdings) {
-                capital += (holdings[sell.symbol].quantity * sell.tradeSignal.price) - Brokerage;
-                rvalue ~= [holdings[sell.symbol], ExecutedTrade(sell.tradeSignal,sell.symbol,holdings[sell.symbol].quantity)];
+                capital += (holdings[sell.symbol].quantity * sell.tradeSignal
+                        .price) - Brokerage;
+                rvalue ~= [
+                    holdings[sell.symbol],
+                    ExecutedTrade(sell.tradeSignal, sell.symbol,
+                            holdings[sell.symbol].quantity)
+                ];
                 holdings.remove(sell.symbol);
             }
         }
 
         //foreach (buy; signals.filter!(a => a.tradeSignal.action==Action.buy)) {
-        foreach (buy; signals.filter!(a => a.tradeSignal.action==Action.buy)
-                             .array
-                             .sort!((a,b) => sharpeRatios[a.symbol][a.tradeSignal.time] >
-                                             sharpeRatios[b.symbol][b.tradeSignal.time])) {
-            if (capital < TradeSize) break;
-            if (buy.tradeSignal.price < 4) break;
-            if (buy.symbol in holdings) writeln (buy.symbol," already bought.");
+        foreach (buy; signals.filter!(a => a.tradeSignal.action == Action.buy)
+                .array
+                .sort!((a, b) => sharpeRatios[a.symbol][a.tradeSignal.time]
+                    > sharpeRatios[b.symbol][b.tradeSignal.time])) {
+            if (capital < TradeSize)
+                break;
+            if (buy.tradeSignal.price < 4)
+                break;
+            if (buy.symbol in holdings)
+                writeln(buy.symbol, " already bought.");
             assert(buy.symbol !in holdings);
-            auto tradeSize = (capital < TradeSize*2) ? (capital-1) : TradeSize;
-            holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,buy.symbol,(tradeSize - Brokerage) / buy.tradeSignal.price);
+            auto tradeSize = (capital < TradeSize * 2) ? (capital - 1) : TradeSize;
+            holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,
+                    buy.symbol, (tradeSize - Brokerage) / buy.tradeSignal.price);
             capital -= Brokerage;
             capital -= holdings[buy.symbol].quantity * buy.tradeSignal.price;
-            assert (capital >= 0);
+            assert(capital >= 0);
         }
     }
 
-    return tuple((capital - StartingCapital) / StartingCapital,rvalue);
+    return tuple((capital - StartingCapital) / StartingCapital, rvalue);
 }
 
-auto longOnlyMACD(T,S) (T market, S fastAverage, S slowAverage, S sharpeRatios,DateTime start, DateTime end) {
+auto longOnlyMACD(T, S)(T market, S fastAverage, S slowAverage,
+        S sharpeRatios, DateTime start, DateTime end) {
     auto capital = StartingCapital;
 
     auto maxHoldings = 10;
@@ -321,153 +322,167 @@ auto longOnlyMACD(T,S) (T market, S fastAverage, S slowAverage, S sharpeRatios,D
     ExecutedTrade[string] holdings;
     ExecutedTrade[] rvalue;
 
-    auto macdToSignal(A,B) (A symbol, B time) {
+    auto macdToSignal(A, B)(A symbol, B time) {
         auto macd = fastAverage[symbol][time] - slowAverage[symbol][time];
-        if (macd > 0) return Action.buy;
-        if (macd < 0) return Action.sell;
+        if (macd > 0)
+            return Action.buy;
+        if (macd < 0)
+            return Action.sell;
         return Action.none;
     }
+
     auto trades = market.map!(a => a.records
-                                    .map!(b => Trade(b.time,b.close,macdToSignal(a.symbol,b.time)))
-                                    .filter!(a => a.action!=Action.none)
-                                    .filter!(a => a.time >= start &&
-                                                  a.time <= end)
-                                    .array
-                                    .uniq!((a,b) => a.action==b.action)
-                                    .array            
-                                    .tradify
-                                    .map!(b => tuple!("symbol","tradeSignal")
-                                                     (a.symbol,b))
-                                    .array)
-                        .joiner
-                        .array
-                        .randomShuffle
-                        .sort!((a,b) => a.tradeSignal.time < b.tradeSignal.time)
-                        .chunkBy!((a,b) => a.tradeSignal.time==b.tradeSignal.time);
+            .map!(b => Trade(b.time, b.close, macdToSignal(a.symbol, b.time)))
+            .filter!(a => a.action != Action.none)
+            .filter!(a => a.time >= start && a.time <= end)
+            .array
+            .uniq!((a, b) => a.action == b.action)
+            .array
+            .tradify
+            .map!(b => tuple!("symbol", "tradeSignal")(a.symbol, b))
+            .array)
+        .joiner
+        .array
+        .randomShuffle
+        .sort!((a, b) => a.tradeSignal.time < b.tradeSignal.time)
+        .chunkBy!((a, b) => a.tradeSignal.time == b.tradeSignal.time);
 
     auto marketSize = sharpeRatios.keys.length;
     foreach (signals; trades) {
 
-        foreach (sell; signals.filter!(a => a.tradeSignal.action==Action.sell)) {
+        foreach (sell; signals.filter!(a => a.tradeSignal.action == Action.sell)) {
             if (sell.symbol in holdings) {
-                capital += (holdings[sell.symbol].quantity * sell.tradeSignal.price) - Brokerage;
-                rvalue ~= [holdings[sell.symbol], ExecutedTrade(sell.tradeSignal,sell.symbol,holdings[sell.symbol].quantity)];
+                capital += (holdings[sell.symbol].quantity * sell.tradeSignal
+                        .price) - Brokerage;
+                rvalue ~= [
+                    holdings[sell.symbol],
+                    ExecutedTrade(sell.tradeSignal, sell.symbol,
+                            holdings[sell.symbol].quantity)
+                ];
                 holdings.remove(sell.symbol);
             }
         }
 
-        foreach (buy; signals.filter!(a => a.tradeSignal.action==Action.buy)) {
-                             //.array
-                             /+ .sort!((a,b) => sharpeRatios[a.symbol].get(a.tradeSignal.time,double.min_normal) >
+        foreach (buy; signals.filter!(a => a.tradeSignal.action == Action.buy)) {
+            //.array
+            /+ .sort!((a,b) => sharpeRatios[a.symbol].get(a.tradeSignal.time,double.min_normal) >
                                              sharpeRatios[b.symbol].get(b.tradeSignal.time,double.min_normal))) { +/
-                            
-            if (capital < TradeSize) break;
+
+            if (capital < TradeSize)
+                break;
             //if (holdings.byKey.count >= maxHoldings) break;
-            
-            
+
             auto sharpeThreshold = sharpeRatios.byValue
-                                               .map!(a => a.get(buy.tradeSignal.time,double.init))
-                                               .filter!(a => !a.isNaN)
-                                               .array
-                                               .sort!((a,b) => a > b)
-                                               .array
-                                               .drop((marketSize*0.2).to!int)
-                                               .front;
+                .map!(a => a.get(buy.tradeSignal.time, double.init))
+                .filter!(a => !a.isNaN)
+                .array
+                .sort!((a, b) => a > b)
+                .array
+                .drop((marketSize * 0.2).to!int).front;
 
-            
-
-            if (buy.symbol in holdings) writeln (buy.symbol," already bought.");
+            if (buy.symbol in holdings)
+                writeln(buy.symbol, " already bought.");
             assert(buy.symbol !in holdings);
 
-            if (sharpeRatios[buy.symbol].get(buy.tradeSignal.time,double.min_normal) > sharpeThreshold) {
+            if (sharpeRatios[buy.symbol].get(buy.tradeSignal.time,
+                    double.min_normal) > sharpeThreshold) {
                 //auto tradeSize = (capital / (maxHoldings - holdings.byKey.count)) - Brokerage;
-                auto tradeSize = ((capital >= TradeSize*2) ? TradeSize : capital) - Brokerage;
-                holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,buy.symbol,(tradeSize - Brokerage) / buy.tradeSignal.price);
+                auto tradeSize = ((capital >= TradeSize * 2) ? TradeSize : capital) - Brokerage;
+                holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,
+                        buy.symbol, (tradeSize - Brokerage) / buy.tradeSignal
+                        .price);
                 capital -= Brokerage;
                 capital -= holdings[buy.symbol].quantity * buy.tradeSignal.price;
-                assert (capital >= 0);
+                assert(capital >= 0);
             }
         }
     }
 
-    writeln ((capital - StartingCapital) / StartingCapital);
-    return tuple((capital - StartingCapital) / StartingCapital,rvalue);
+    writeln((capital - StartingCapital) / StartingCapital);
+    return tuple((capital - StartingCapital) / StartingCapital, rvalue);
 }
 
-auto fullMACD(T,S) (T market, S fastAverage, S slowAverage, S signal, S sharpeRatios,DateTime start, DateTime end) {
+auto fullMACD(T, S)(T market, S fastAverage, S slowAverage, S signal,
+        S sharpeRatios, DateTime start, DateTime end) {
     auto capital = StartingCapital;
 
     ExecutedTrade[string] holdings;
     ExecutedTrade[] rvalue;
 
-    auto macdToSignal(A,B) (A symbol, B time) {
+    auto macdToSignal(A, B)(A symbol, B time) {
         auto macd = fastAverage[symbol][time] - slowAverage[symbol][time];
         auto signal = signal[symbol][time];
 
-        if (macd > signal) return Action.buy;
-        if (macd < signal) return Action.sell;
+        if (macd > signal)
+            return Action.buy;
+        if (macd < signal)
+            return Action.sell;
         return Action.none;
     }
 
     auto trades = market.map!(a => a.records
-                                    .map!(b => Trade(b.time,b.close,macdToSignal(a.symbol,b.time)))
-                                    .filter!(a => a.action!=Action.none)
-                                    .filter!(a => a.time >= start &&
-                                                  a.time <= end)
-                                    .array
-                                    .uniq!((a,b) => a.action==b.action)
-                                    .array            
-                                    .tradify
-                                    .map!(b => tuple!("symbol","tradeSignal")
-                                                     (a.symbol,b))
-                                    .array)
-                        .joiner
-                        .array
-                        .randomShuffle
-                        .sort!((a,b) => a.tradeSignal.time < b.tradeSignal.time)
-                        .chunkBy!((a,b) => a.tradeSignal.time==b.tradeSignal.time);
+            .map!(b => Trade(b.time, b.close, macdToSignal(a.symbol, b.time)))
+            .filter!(a => a.action != Action.none)
+            .filter!(a => a.time >= start && a.time <= end)
+            .array
+            .uniq!((a, b) => a.action == b.action)
+            .array
+            .tradify
+            .map!(b => tuple!("symbol", "tradeSignal")(a.symbol, b))
+            .array)
+        .joiner
+        .array
+        .randomShuffle
+        .sort!((a, b) => a.tradeSignal.time < b.tradeSignal.time)
+        .chunkBy!((a, b) => a.tradeSignal.time == b.tradeSignal.time);
 
     auto marketSize = sharpeRatios.keys.length;
     foreach (signals; trades) {
 
-        foreach (sell; signals.filter!(a => a.tradeSignal.action==Action.sell)) {
+        foreach (sell; signals.filter!(a => a.tradeSignal.action == Action.sell)) {
             if (sell.symbol in holdings) {
-                capital += (holdings[sell.symbol].quantity * sell.tradeSignal.price) - Brokerage;
-                rvalue ~= [holdings[sell.symbol], ExecutedTrade(sell.tradeSignal,sell.symbol,holdings[sell.symbol].quantity)];
+                capital += (holdings[sell.symbol].quantity * sell.tradeSignal
+                        .price) - Brokerage;
+                rvalue ~= [
+                    holdings[sell.symbol],
+                    ExecutedTrade(sell.tradeSignal, sell.symbol,
+                            holdings[sell.symbol].quantity)
+                ];
                 holdings.remove(sell.symbol);
             }
         }
 
-        foreach (buy; signals.filter!(a => a.tradeSignal.action==Action.buy)) {
-                             //.array
-                             /+ .sort!((a,b) => sharpeRatios[a.symbol].get(a.tradeSignal.time,double.min_normal) >
+        foreach (buy; signals.filter!(a => a.tradeSignal.action == Action.buy)) {
+            //.array
+            /+ .sort!((a,b) => sharpeRatios[a.symbol].get(a.tradeSignal.time,double.min_normal) >
                                              sharpeRatios[b.symbol].get(b.tradeSignal.time,double.min_normal))) { +/
-                            
-            if (capital < TradeSize) break;
+
+            if (capital < TradeSize)
+                break;
             //if (holdings.byKey.count >= maxHoldings) break;
-            
-            
+
             auto sharpeThreshold = sharpeRatios.byValue
-                                               .map!(a => a.get(buy.tradeSignal.time,double.init))
-                                               .filter!(a => !a.isNaN)
-                                               .array
-                                               .sort!((a,b) => a > b)
-                                               .array
-                                               .drop((marketSize*0.05).to!int)
-                                               .front;
+                .map!(a => a.get(buy.tradeSignal.time, double.init))
+                .filter!(a => !a.isNaN)
+                .array
+                .sort!((a, b) => a > b)
+                .array
+                .drop((marketSize * 0.05).to!int).front;
 
-            
-
-            if (buy.symbol in holdings) writeln (buy.symbol," already bought.");
+            if (buy.symbol in holdings)
+                writeln(buy.symbol, " already bought.");
             assert(buy.symbol !in holdings);
 
-            if (sharpeRatios[buy.symbol].get(buy.tradeSignal.time,double.min_normal) > sharpeThreshold) {
+            if (sharpeRatios[buy.symbol].get(buy.tradeSignal.time,
+                    double.min_normal) > sharpeThreshold) {
                 //auto tradeSize = (capital / (maxHoldings - holdings.byKey.count)) - Brokerage;
-                auto tradeSize = ((capital >= TradeSize*2) ? TradeSize : capital) - Brokerage;
-                holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,buy.symbol,(tradeSize - Brokerage) / buy.tradeSignal.price);
+                auto tradeSize = ((capital >= TradeSize * 2) ? TradeSize : capital) - Brokerage;
+                holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,
+                        buy.symbol, (tradeSize - Brokerage) / buy.tradeSignal
+                        .price);
                 capital -= Brokerage;
                 capital -= holdings[buy.symbol].quantity * buy.tradeSignal.price;
-                assert (capital >= 0);
+                assert(capital >= 0);
             }
         }
     }
@@ -477,157 +492,173 @@ auto fullMACD(T,S) (T market, S fastAverage, S slowAverage, S signal, S sharpeRa
     foreach (trade; rvalue) {
         file.writeln (trade.symbol,",",trade.time,",",trade.price,",",trade.action);
     } +/
-    return tuple((capital - StartingCapital) / StartingCapital,rvalue);
+    return tuple((capital - StartingCapital) / StartingCapital, rvalue);
 }
 
-auto fullMACDWithRSI(T,S) (T market, S fastAverage, S slowAverage, S signal, S rsi,DateTime start, DateTime end) {
+auto fullMACDWithRSI(T, S)(T market, S fastAverage, S slowAverage,
+        S signal, S rsi, DateTime start, DateTime end) {
     auto capital = StartingCapital;
 
     ExecutedTrade[string] holdings;
     ExecutedTrade[] rvalue;
 
-    auto macdToSignal(A,B) (A symbol, B time) {
+    auto macdToSignal(A, B)(A symbol, B time) {
         auto macd = fastAverage[symbol][time] - slowAverage[symbol][time];
         auto signal = signal[symbol][time];
 
-        if (macd > signal && rsi[symbol].get(time,9999) < 30) return Action.buy;
-        if (macd < signal && rsi[symbol].get(time,0) > 70) return Action.sell;
+        if (macd > signal && rsi[symbol].get(time, 9999) < 30)
+            return Action.buy;
+        if (macd < signal && rsi[symbol].get(time, 0) > 70)
+            return Action.sell;
         return Action.none;
     }
 
     auto trades = market.map!(a => a.records
-                                    .map!(b => Trade(b.time,b.close,macdToSignal(a.symbol,b.time)))
-                                    .filter!(a => a.action!=Action.none)
-                                    .filter!(a => a.time >= start &&
-                                                  a.time <= end)
-                                    .array
-                                    .uniq!((a,b) => a.action==b.action)
-                                    .array            
-                                    .tradify
-                                    .map!(b => tuple!("symbol","tradeSignal")
-                                                     (a.symbol,b))
-                                    .array)
-                        .joiner
-                        .array
-                        .randomShuffle
-                        .sort!((a,b) => a.tradeSignal.time < b.tradeSignal.time)
-                        .chunkBy!((a,b) => a.tradeSignal.time==b.tradeSignal.time);
-
-    
+            .map!(b => Trade(b.time, b.close, macdToSignal(a.symbol, b.time)))
+            .filter!(a => a.action != Action.none)
+            .filter!(a => a.time >= start && a.time <= end)
+            .array
+            .uniq!((a, b) => a.action == b.action)
+            .array
+            .tradify
+            .map!(b => tuple!("symbol", "tradeSignal")(a.symbol, b))
+            .array)
+        .joiner
+        .array
+        .randomShuffle
+        .sort!((a, b) => a.tradeSignal.time < b.tradeSignal.time)
+        .chunkBy!((a, b) => a.tradeSignal.time == b.tradeSignal.time);
 
     foreach (signals; trades) {
 
-        foreach (sell; signals.filter!(a => a.tradeSignal.action==Action.sell)) {
+        foreach (sell; signals.filter!(a => a.tradeSignal.action == Action.sell)) {
             if (sell.symbol in holdings) {
-                capital += (holdings[sell.symbol].quantity * sell.tradeSignal.price) - Brokerage;
-                rvalue ~= [holdings[sell.symbol], ExecutedTrade(sell.tradeSignal,sell.symbol,holdings[sell.symbol].quantity)];
+                capital += (holdings[sell.symbol].quantity * sell.tradeSignal
+                        .price) - Brokerage;
+                rvalue ~= [
+                    holdings[sell.symbol],
+                    ExecutedTrade(sell.tradeSignal, sell.symbol,
+                            holdings[sell.symbol].quantity)
+                ];
                 holdings.remove(sell.symbol);
             }
         }
 
-        foreach (buy; signals.filter!(a => a.tradeSignal.action==Action.buy)) {
-                             //.array
-                             /+ .sort!((a,b) => sharpeRatios[a.symbol].get(a.tradeSignal.time,double.min_normal) >
+        foreach (buy; signals.filter!(a => a.tradeSignal.action == Action.buy)) {
+            //.array
+            /+ .sort!((a,b) => sharpeRatios[a.symbol].get(a.tradeSignal.time,double.min_normal) >
                                              sharpeRatios[b.symbol].get(b.tradeSignal.time,double.min_normal))) { +/
-                            
-            if (capital < TradeSize) break;
-            
-            
-            if (buy.symbol in holdings) writeln (buy.symbol," already bought.");
+
+            if (capital < TradeSize)
+                break;
+
+            if (buy.symbol in holdings)
+                writeln(buy.symbol, " already bought.");
             assert(buy.symbol !in holdings);
 
             //auto tradeSize = (capital / (maxHoldings - holdings.byKey.count)) - Brokerage;
-            auto tradeSize = ((capital >= TradeSize*2) ? TradeSize : capital) - Brokerage;
-            holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,buy.symbol,(tradeSize - Brokerage) / buy.tradeSignal.price);
+            auto tradeSize = ((capital >= TradeSize * 2) ? TradeSize : capital) - Brokerage;
+            holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,
+                    buy.symbol, (tradeSize - Brokerage) / buy.tradeSignal.price);
             capital -= Brokerage;
             capital -= holdings[buy.symbol].quantity * buy.tradeSignal.price;
-            assert (capital >= 0);
-            
+            assert(capital >= 0);
+
         }
     }
 
-    writeln ((capital - StartingCapital) / StartingCapital);
+    writeln((capital - StartingCapital) / StartingCapital);
     {
-        auto file = File("trades.csv","w");
+        auto file = File("trades.csv", "w");
         foreach (trade; rvalue) {
-            file.writeln (trade.symbol,",",trade.time,",",trade.price,",",trade.action);
+            file.writeln(trade.symbol, ",", trade.time, ",",
+                    trade.price, ",", trade.action);
 
         }
     }
-    return tuple((capital - StartingCapital) / StartingCapital,rvalue);
+    return tuple((capital - StartingCapital) / StartingCapital, rvalue);
 }
 
-alias Band = Tuple!(double,"upper",double,"lower");
+alias Band = Tuple!(double, "upper", double, "lower");
 
-auto bollingerBandsWithRSI(T,R,S) (T market, R bands, S rsi, S sharpeRatios, DateTime start, DateTime end) {
+auto bollingerBandsWithRSI(T, R, S)(T market, R bands, S rsi,
+        S sharpeRatios, DateTime start, DateTime end) {
     auto capital = StartingCapital;
 
     ExecutedTrade[string] holdings;
     ExecutedTrade[] rvalue;
 
-    auto getSignal(A,B) (A symbol, B time, double price) {
+    auto getSignal(A, B)(A symbol, B time, double price) {
         if (symbol !in bands) {
             symbol.writeln;
             return Action.none;
         }
 
-        auto band = bands[symbol].get(time,Band.init);
-        auto rsi = rsi[symbol].get(time,double.nan);
-        
-        if ([band.upper,band.lower,rsi].canFind!(a => a.isNaN)) return Action.none;
+        auto band = bands[symbol].get(time, Band.init);
+        auto rsi = rsi[symbol].get(time, double.nan);
 
-        if (price >= band.upper && rsi > 50) return Action.sell;
-        if (price <= band.lower && rsi < 50) return Action.buy;
+        if ([band.upper, band.lower, rsi].canFind!(a => a.isNaN))
+            return Action.none;
+
+        if (price >= band.upper && rsi > 50)
+            return Action.sell;
+        if (price <= band.lower && rsi < 50)
+            return Action.buy;
 
         return Action.none;
     }
 
     auto trades = market.map!(a => a.records
-                                    .map!(b => Trade(b.time,b.close,getSignal(a.symbol,b.time,b.close)))
-                                    .filter!(a => a.action!=Action.none)
-                                    .filter!(a => a.time >= start &&
-                                                  a.time <= end)
-                                    .array
-                                    .uniq!((a,b) => a.action==b.action)
-                                    .array            
-                                    //.tradify
-                                    .map!(b => tuple!("symbol","tradeSignal")
-                                                     (a.symbol,b))
-                                    .array)
-                        .joiner
-                        .array
-                        .randomShuffle
-                        .sort!((a,b) => a.tradeSignal.time < b.tradeSignal.time)
-                        .chunkBy!((a,b) => a.tradeSignal.time==b.tradeSignal.time); 
+            .map!(b => Trade(b.time, b.close, getSignal(a.symbol, b.time, b.close)))
+            .filter!(a => a.action != Action.none)
+            .filter!(a => a.time >= start && a.time <= end)
+            .array
+            .uniq!((a, b) => a.action == b.action)
+            .array //.tradify
+            .map!(b => tuple!("symbol", "tradeSignal")(a.symbol, b))
+            .array)
+        .joiner
+        .array
+        .randomShuffle
+        .sort!((a, b) => a.tradeSignal.time < b.tradeSignal.time)
+        .chunkBy!((a, b) => a.tradeSignal.time == b.tradeSignal.time);
 
     foreach (signals; trades) {
 
-        foreach (sell; signals.filter!(a => a.tradeSignal.action==Action.sell)) {
+        foreach (sell; signals.filter!(a => a.tradeSignal.action == Action.sell)) {
             if (sell.symbol in holdings) {
-                capital += (holdings[sell.symbol].quantity * sell.tradeSignal.price) - Brokerage;
-                rvalue ~= [holdings[sell.symbol], ExecutedTrade(sell.tradeSignal,sell.symbol,holdings[sell.symbol].quantity)];
+                capital += (holdings[sell.symbol].quantity * sell.tradeSignal
+                        .price) - Brokerage;
+                rvalue ~= [
+                    holdings[sell.symbol],
+                    ExecutedTrade(sell.tradeSignal, sell.symbol,
+                            holdings[sell.symbol].quantity)
+                ];
                 holdings.remove(sell.symbol);
             }
         }
 
-        foreach (buy; signals.filter!(a => a.tradeSignal.action==Action.buy).array.randomShuffle) {
-                             //.array
-                             /+ .sort!((a,b) => sharpeRatios[a.symbol].get(a.tradeSignal.time,double.min_normal) >
+        foreach (buy; signals.filter!(a => a.tradeSignal.action == Action.buy)
+                .array.randomShuffle) {
+            //.array
+            /+ .sort!((a,b) => sharpeRatios[a.symbol].get(a.tradeSignal.time,double.min_normal) >
                                              sharpeRatios[b.symbol].get(b.tradeSignal.time,double.min_normal))) { +/
-                            
-            if (capital < TradeSize) break;
-            
-            
-            if (buy.symbol in holdings) writeln (buy.symbol," already bought.");
+
+            if (capital < TradeSize)
+                break;
+
+            if (buy.symbol in holdings)
+                writeln(buy.symbol, " already bought.");
             assert(buy.symbol !in holdings);
 
             //auto tradeSize = (capital / (maxHoldings - holdings.byKey.count)) - Brokerage;
-            auto tradeSize = ((capital >= TradeSize*2) ? TradeSize : capital) - Brokerage;
-            holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,buy.symbol,(tradeSize - Brokerage) / buy.tradeSignal.price);
+            auto tradeSize = ((capital >= TradeSize * 2) ? TradeSize : capital) - Brokerage;
+            holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,
+                    buy.symbol, (tradeSize - Brokerage) / buy.tradeSignal.price);
             capital -= Brokerage;
             capital -= holdings[buy.symbol].quantity * buy.tradeSignal.price;
-            assert (capital >= 0);
-            
+            assert(capital >= 0);
+
         }
     }
 
@@ -639,58 +670,52 @@ auto bollingerBandsWithRSI(T,R,S) (T market, R bands, S rsi, S sharpeRatios, Dat
 
         }
     } +/
-    
-    
-    {
-        auto file = File("signals-bollinger.csv","w");
-        file.writeln ("name,time,price,rsi,sharpe,action");
-        foreach (trade; chain(holdings.byValue,rvalue)) {
-            file.writeln (trade.symbol,",",trade.time.toISOExtString
-                                                     .splitter("T")
-                                                     .front
-                                                     .replace("-","/")
-                                                     //.to!string,",",trade.price,",",rsi[trade.symbol][trade.time],",",sharpeRatios[trade.symbol][trade.time],",",trade.action);
-                                                     .to!string,",",trade.price,",",rsi[trade.symbol][trade.time],",",
-                                                     (trade.symbol in sharpeRatios && trade.time in sharpeRatios[trade.symbol]) ? sharpeRatios[trade.symbol][trade.time].to!string : "",
-                                                     ",",trade.action);
-        }
-    }   
 
-    return tuple((capital - StartingCapital) / StartingCapital,rvalue); 
+    {
+        auto file = File("signals-bollinger.csv", "w");
+        file.writeln("name,time,price,rsi,sharpe,action");
+        foreach (trade; chain(holdings.byValue, rvalue)) {
+            file.writeln(trade.symbol, ",",
+                    trade.time.toISOExtString.splitter("T")
+                    .front.replace("-", "/") //.to!string,",",trade.price,",",rsi[trade.symbol][trade.time],",",sharpeRatios[trade.symbol][trade.time],",",trade.action);
+                    .to!string, ",",
+                    trade.price, ",", rsi[trade.symbol][trade.time], ",",
+                    (trade.symbol in sharpeRatios
+                        && trade.time in sharpeRatios[trade.symbol]) ? sharpeRatios[trade
+                        .symbol][trade.time].to!string : "", ",", trade.action);
+        }
+    }
+
+    return tuple((capital - StartingCapital) / StartingCapital, rvalue);
 
 }
 
-auto simpleMeanReversion(T) (T, DateTime start, DateTime end) {
+auto simpleMeanReversion(T)(T, DateTime start, DateTime end) {
     auto capital = StartingCapital;
-    
+
     ExecutedTrade[string] holdings;
     ExecutedTrade[] rvalue;
-
 
 }
 
 // works with inverse ETF
-auto rsi75Strategy(T) (T market) {
-    writeln ("RSI75");
+auto rsi75Strategy(T)(T market) {
+    writeln("RSI75");
     auto capital = StartingCapital;
-    enum Signal {above, below, na}
-    auto data = market.map!(a => tuple!("symbol",
-                                        "date",
-                                        "close",
-                                        "ma",
-                                        "rsi")
-                                       (a.symbol,
-                                        a.records.map!(a => Date(a.time.year, a.time.month, a.time.day)).array,
-                                        a.records.map!(a => a.close).array,
-                                        a.records.sma!"close"(200).array,
-                                        a.records.rsi!"close"(4).array))
-                      .array;
+    enum Signal {
+        above,
+        below,
+        na
+    }
 
-    alias TradeResult = Tuple!(Date,"date",
-                               string,"symbol",
-                               double,"held",
-                               Date,"start",
-                               double,"result");
+    auto data = market.map!(a => tuple!("symbol", "date", "close",
+            "ma", "rsi")(a.symbol, a.records.map!(a => Date(a.time.year,
+            a.time.month, a.time.day)).array, a.records.map!(a => a.close)
+            .array, a.records.sma!"close"(200).array, a.records.rsi!"close"(4)
+            .array)).array;
+
+    alias TradeResult = Tuple!(Date, "date", string, "symbol",
+            double, "held", Date, "start", double, "result");
 
     TradeResult[] results;
     foreach (stock; data) {
@@ -698,7 +723,8 @@ auto rsi75Strategy(T) (T market) {
         auto holding = false;
         Date start;
         double buyPrice;
-        foreach (date, close, ma, rsi; zip(stock.date, stock.close,stock.ma,stock.rsi)) {
+        foreach (date, close, ma, rsi; zip(stock.date, stock.close, stock.ma, stock
+                .rsi)) {
             if (close < ma && rsi > 75 && !holding) {
                 //writeln ("BUY: ",close);
                 holding = true;
@@ -709,7 +735,8 @@ auto rsi75Strategy(T) (T market) {
             if (rsi < 45 && holding) {
                 //writeln ("SELL: ",close);
                 holding = false;
-                results ~= TradeResult(date,stock.symbol,(date - start).total!"days",start,(close - buyPrice) / buyPrice);
+                results ~= TradeResult(date, stock.symbol, (date - start)
+                        .total!"days", start, (close - buyPrice) / buyPrice);
                 //writeln (date - start);
             }
         }
@@ -717,82 +744,73 @@ auto rsi75Strategy(T) (T market) {
 
     return results;
 
-    results.sort!((a,b) => a.symbol < b.symbol)
-           .chunkBy!((a,b) => a.symbol == b.symbol)
-           .each!(a => writeln (a.front.symbol," ",
-                                a.map!(b => b.held).mean," ",
-                                a.map!(b => b.result).mean," ",
-                                a.map!(b => b.result).minElement," ",
-                                a.map!(b => b.result).maxElement," ",
-                                a.count!(b => b.result > 0) / a.count.to!double));
+    results.sort!((a, b) => a.symbol < b.symbol)
+        .chunkBy!((a, b) => a.symbol == b.symbol)
+        .each!(a => writeln(a.front.symbol, " ", a.map!(b => b.held)
+                .mean, " ", a.map!(b => b.result).mean, " ",
+                a.map!(b => b.result).minElement, " ",
+                a.map!(b => b.result).maxElement, " ",
+                a.count!(b => b.result > 0) / a.count.to!double));
 
-    results.sort!((a,b) => a.date < b.date);
+    results.sort!((a, b) => a.date < b.date);
     int[Date] openOrders;
     import core.time : dur;
+
     foreach (result; results) {
         for (Date date = result.start; date <= result.date; date += 1.dur!"days") {
-            openOrders[date] = openOrders.get(date,0) + 1;
+            openOrders[date] = openOrders.get(date, 0) + 1;
         }
     }
 
     auto ordersHeld = openOrders.byKeyValue
-                                .array
-                                .sort!((a,b) => a.key < b.key)
-                                .filter!(a => a.key >= Date(2015,1,1))
-                                .chunkBy!((a,b) => a.key.year == b.key.year)
-                                ;
+        .array
+        .sort!((a, b) => a.key < b.key)
+        .filter!(a => a.key >= Date(2015, 1, 1))
+        .chunkBy!((a, b) => a.key.year == b.key.year);
 
     writeln("% year held,num per day");
-    ordersHeld.each!(a => writeln (a.count / 252.0," ",a.map!(b => b.value).mean));
+    ordersHeld.each!(a => writeln(a.count / 252.0, " ", a.map!(b => b.value).mean));
 
     results.map!(a => a.result).mean.writeln;
-           
-    results.chunkBy!((a,b) => a.date.year == b.date.year && a.date.month == b.date.month)
-           .map!(a => a.count)
-           .mean
-           .writeln;
-    
+
+    results.chunkBy!((a, b) => a.date.year == b.date.year && a.date.month == b
+            .date.month)
+        .map!(a => a.count)
+        .mean
+        .writeln;
+
 }
 
-auto rsi2Strategy(T) (T market) {
-    writeln ("RSI2");
+auto rsi2Strategy(T)(T market) {
+    writeln("RSI2");
     auto capital = StartingCapital;
-    enum Signal {above, below, na}
-    auto data = market.map!(a => tuple!("symbol",
-                                        "date",
-                                        "close",
-                                        "ma",
-                                        "rsi")
-                                       (a.symbol,
-                                        a.records.map!(a => Date(a.time.year, a.time.month, a.time.day)).array,
-                                        a.records.map!(a => a.close).array,
-                                        a.records.sma!"close"(200).array,
-                                        a.records.rsi!"close"(2).array))
-                      .array;
+    enum Signal {
+        above,
+        below,
+        na
+    }
 
-    alias TradeResult = Tuple!(Date,"date",
-                               string,"symbol",
-                               double,"held",
-                               Date,"start",
-                               double,"result");
+    auto data = market.map!(a => tuple!("symbol", "date", "close",
+            "ma", "rsi")(a.symbol, a.records.map!(a => Date(a.time.year,
+            a.time.month, a.time.day)).array, a.records.map!(a => a.close)
+            .array, a.records.sma!"close"(200).array, a.records.rsi!"close"(2)
+            .array)).array;
+
+    alias TradeResult = Tuple!(Date, "date", string, "symbol",
+            double, "held", Date, "start", double, "result");
 
     TradeResult[] results;
     foreach (stock; data) {
         auto holding = false;
         Date start;
         double buyPrice;
-        foreach (date, close, ma, rsi; zip(stock.date, stock.close,stock.ma,stock.rsi)
-                                            .slide(3)
-                                            .map!(a => tuple(a.map!(a => a[0]).array,
-                                                             a.map!(a => a[1]).array,
-                                                             a.map!(a => a[2]).array,
-                                                             a.map!(a => a[3]).array))) {
+        foreach (date, close, ma, rsi; zip(stock.date, stock.close, stock.ma, stock
+                .rsi).slide(3).map!(a => tuple(a.map!(a => a[0])
+                .array, a.map!(a => a[1]).array, a.map!(a => a[2])
+                .array, a.map!(a => a[3]).array))) {
 
-            if (close.back > ma.back && 
-                rsi[2] < rsi[1] && 
-                rsi[1] < rsi[0] && 
-                rsi[0] < 60 &&
-                rsi[2] < 10 && !holding) {
+            if (close.back > ma.back && rsi[2] < rsi[1]
+                    && rsi[1] < rsi[0] && rsi[0] < 60 && rsi[2] < 10 && !holding) {
                 //writeln ("BUY: ",close);
                 holding = true;
                 start = date.back;
@@ -802,7 +820,9 @@ auto rsi2Strategy(T) (T market) {
             if (rsi.front > 70 && holding) {
                 //writeln ("SELL: ",close);
                 holding = false;
-                results ~= TradeResult(date.front,stock.symbol,(date.front - start).total!"days",start,(close.front - buyPrice) / buyPrice);
+                results ~= TradeResult(date.front, stock.symbol,
+                        (date.front - start)
+                        .total!"days", start, (close.front - buyPrice) / buyPrice);
                 //writeln (date - start);
             }
         }
@@ -811,36 +831,33 @@ auto rsi2Strategy(T) (T market) {
     return results;
 }
 
-auto rsi10Strategy(T) (T market) {
-    writeln ("RSI10");
+auto rsi10Strategy(T)(T market) {
+    writeln("RSI10");
     auto capital = StartingCapital;
-    enum Signal {above, below, na}
-    auto data = market.map!(a => tuple!("symbol",
-                                        "date",
-                                        "close",
-                                        "ma",
-                                        "fastMa",
-                                        "rsi")
-                                       (a.symbol,
-                                        a.records.map!(a => Date(a.time.year, a.time.month, a.time.day)).array,
-                                        a.records.map!(a => a.close).array,
-                                        a.records.sma!"close"(200).array,
-                                        a.records.sma!"close"(5).array,
-                                        a.records.rsi!"close"(2).array))
-                      .array;
+    enum Signal {
+        above,
+        below,
+        na
+    }
 
-    alias TradeResult = Tuple!(Date,"date",
-                               string,"symbol",
-                               double,"held",
-                               Date,"start",
-                               double,"result");
+    auto data = market.map!(a => tuple!("symbol", "date", "close",
+            "ma", "fastMa", "rsi")(a.symbol,
+            a.records.map!(a => Date(a.time.year, a.time.month, a.time.day))
+            .array, a.records.map!(a => a.close)
+            .array, a.records.sma!"close"(200).array,
+            a.records.sma!"close"(5).array, a.records.rsi!"close"(2).array))
+        .array;
+
+    alias TradeResult = Tuple!(Date, "date", string, "symbol",
+            double, "held", Date, "start", double, "result");
 
     TradeResult[] results;
     foreach (stock; data) {
         auto holding = false;
         Date start;
         double buyPrice;
-        foreach (date, close, ma, rsi, fastMa; zip(stock.date, stock.close,stock.ma,stock.rsi, stock.fastMa)) {
+        foreach (date, close, ma, rsi, fastMa; zip(stock.date,
+                stock.close, stock.ma, stock.rsi, stock.fastMa)) {
             if (close > ma && rsi < 10 && !holding) {
                 //writeln ("BUY: ",close);
                 holding = true;
@@ -851,7 +868,8 @@ auto rsi10Strategy(T) (T market) {
             if (close > fastMa && holding) {
                 //writeln ("SELL: ",close);
                 holding = false;
-                results ~= TradeResult(date,stock.symbol,(date - start).total!"days",start,(close - buyPrice) / buyPrice);
+                results ~= TradeResult(date, stock.symbol, (date - start)
+                        .total!"days", start, (close - buyPrice) / buyPrice);
                 //writeln (date - start);
             }
         }
@@ -860,29 +878,25 @@ auto rsi10Strategy(T) (T market) {
     return results;
 }
 
-auto emaTrendStrategy(T) (T market, int fast, int slow, int rsiThreshold = 25) {
-    writeln ("EMA ",fast," ",slow);
+auto emaTrendStrategy(T)(T market, int fast, int slow, int rsiThreshold = 25) {
+    writeln("EMA ", fast, " ", slow);
     auto capital = StartingCapital;
-    enum Signal {above, below, na}
-    auto data = market.map!(a => tuple!("symbol",
-                                        "date",
-                                        "close",
-                                        "ma",
-                                        "fastMa",
-                                        "rsi")
-                                       (a.symbol,
-                                        a.records.map!(a => Date(a.time.year, a.time.month, a.time.day)).array,
-                                        a.records.map!(a => a.close).array,
-                                        a.records.ema!"close"(slow).array,
-                                        a.records.ema!"close"(fast).array,
-                                        a.records.rsi!"close"(2).array))
-                      .array;
+    enum Signal {
+        above,
+        below,
+        na
+    }
 
-    alias TradeResult = Tuple!(Date,"date",
-                               string,"symbol",
-                               double,"held",
-                               Date,"start",
-                               double,"result");
+    auto data = market.map!(a => tuple!("symbol", "date", "close",
+            "ma", "fastMa", "rsi")(a.symbol,
+            a.records.map!(a => Date(a.time.year, a.time.month, a.time.day))
+            .array, a.records.map!(a => a.close)
+            .array, a.records.ema!"close"(slow).array,
+            a.records.ema!"close"(fast).array, a.records.rsi!"close"(2).array))
+        .array;
+
+    alias TradeResult = Tuple!(Date, "date", string, "symbol",
+            double, "held", Date, "start", double, "result");
 
     TradeResult[] results;
     string[][string] outputs;
@@ -891,18 +905,22 @@ auto emaTrendStrategy(T) (T market, int fast, int slow, int rsiThreshold = 25) {
         auto holding = false;
         Date start;
         double buyPrice;
-        foreach (date, close, ma, rsi, fastMa; zip(stock.date, stock.close,stock.ma,stock.rsi, stock.fastMa)) {
+        foreach (date, close, ma, rsi, fastMa; zip(stock.date,
+                stock.close, stock.ma, stock.rsi, stock.fastMa)) {
             if (fastMa > ma && rsi < rsiThreshold && !holding) {
-                outputs[stock.symbol] ~= format("%s %s %s %s",date, stock.symbol, "BUY", close);
+                outputs[stock.symbol] ~= format("%s %s %s %s", date,
+                        stock.symbol, "BUY", close);
                 holding = true;
                 start = date;
                 buyPrice = close;
             }
 
             if (fastMa < ma && holding) {
-                outputs[stock.symbol] ~= format("%s %s %s %s",date, stock.symbol, "SELL", close);
+                outputs[stock.symbol] ~= format("%s %s %s %s", date,
+                        stock.symbol, "SELL", close);
                 holding = false;
-                results ~= TradeResult(date,stock.symbol,(date - start).total!"days",start,(close - buyPrice) / buyPrice);
+                results ~= TradeResult(date, stock.symbol, (date - start)
+                        .total!"days", start, (close - buyPrice) / buyPrice);
                 //writeln (date - start);
             }
         }
@@ -915,34 +933,31 @@ auto emaTrendStrategy(T) (T market, int fast, int slow, int rsiThreshold = 25) {
     return results;
 }
 
-auto rsi25Strategy(T) (T market) {
-    writeln ("RSI25");
+auto rsi25Strategy(T)(T market) {
+    writeln("RSI25");
     auto capital = StartingCapital;
-    enum Signal {above, below, na}
-    auto data = market.map!(a => tuple!("symbol",
-                                        "date",
-                                        "close",
-                                        "ma",
-                                        "rsi")
-                                       (a.symbol,
-                                        a.records.map!(a => Date(a.time.year, a.time.month, a.time.day)).array,
-                                        a.records.map!(a => a.close).array,
-                                        a.records.sma!"close"(200).array,
-                                        a.records.rsi!"close"(4).array))
-                      .array;
+    enum Signal {
+        above,
+        below,
+        na
+    }
 
-    alias TradeResult = Tuple!(Date,"date",
-                               string,"symbol",
-                               double,"held",
-                               Date,"start",
-                               double,"result");
+    auto data = market.map!(a => tuple!("symbol", "date", "close",
+            "ma", "rsi")(a.symbol, a.records.map!(a => Date(a.time.year,
+            a.time.month, a.time.day)).array, a.records.map!(a => a.close)
+            .array, a.records.sma!"close"(200).array, a.records.rsi!"close"(4)
+            .array)).array;
+
+    alias TradeResult = Tuple!(Date, "date", string, "symbol",
+            double, "held", Date, "start", double, "result");
 
     TradeResult[] results;
     foreach (stock; data) {
         auto holding = false;
         Date start;
         double buyPrice;
-        foreach (date, close, ma, rsi; zip(stock.date, stock.close,stock.ma,stock.rsi)) {
+        foreach (date, close, ma, rsi; zip(stock.date, stock.close, stock.ma, stock
+                .rsi)) {
             if (close > ma && rsi < 25 && !holding) {
                 //writeln ("BUY: ",stock.symbol," ",close);
                 holding = true;
@@ -953,7 +968,8 @@ auto rsi25Strategy(T) (T market) {
             if (rsi > 55 && holding) {
                 //writeln ("SELL: ",stock.symbol," ",close);
                 holding = false;
-                results ~= TradeResult(date,stock.symbol,(date - start).total!"days",start,(close - buyPrice) / buyPrice);
+                results ~= TradeResult(date, stock.symbol, (date - start)
+                        .total!"days", start, (close - buyPrice) / buyPrice);
                 //writeln (date - start);
             }
         }
@@ -961,81 +977,80 @@ auto rsi25Strategy(T) (T market) {
 
     return results;
 
-    results.sort!((a,b) => a.symbol < b.symbol)
-           .chunkBy!((a,b) => a.symbol == b.symbol)
-           .each!(a => writeln (a.front.symbol," ",
-                                a.map!(b => b.held).mean," ",
-                                a.map!(b => b.result).mean," ",
-                                a.map!(b => b.result).minElement," ",
-                                a.map!(b => b.result).maxElement," ",
-                                a.count!(b => b.result > 0) / a.count.to!double," ",
-                                a.filter!(b => b.start >= Date(2015,1,1)).count));
+    results.sort!((a, b) => a.symbol < b.symbol)
+        .chunkBy!((a, b) => a.symbol == b.symbol)
+        .each!(a => writeln(a.front.symbol, " ", a.map!(b => b.held)
+                .mean, " ", a.map!(b => b.result).mean, " ",
+                a.map!(b => b.result).minElement, " ",
+                a.map!(b => b.result).maxElement, " ",
+                a.count!(b => b.result > 0) / a.count.to!double, " ",
+                a.filter!(b => b.start >= Date(2015, 1, 1)).count));
 
-    results.sort!((a,b) => a.date < b.date);
+    results.sort!((a, b) => a.date < b.date);
     int[Date] openOrders;
     import core.time : dur;
+
     foreach (result; results) {
         for (Date date = result.start; date <= result.date; date += 1.dur!"days") {
-            openOrders[date] = openOrders.get(date,0) + 1;
+            openOrders[date] = openOrders.get(date, 0) + 1;
         }
     }
 
     auto ordersHeld = openOrders.byKeyValue
-                                .array
-                                .sort!((a,b) => a.key < b.key)
-                                .filter!(a => a.key >= Date(2015,1,1))
-                                .chunkBy!((a,b) => a.key.year == b.key.year)
-                                ;
+        .array
+        .sort!((a, b) => a.key < b.key)
+        .filter!(a => a.key >= Date(2015, 1, 1))
+        .chunkBy!((a, b) => a.key.year == b.key.year);
 
     writeln("% year held,num per day");
-    ordersHeld.each!(a => writeln (a.count / 252.0," ",a.map!(b => b.value).mean));
+    ordersHeld.each!(a => writeln(a.count / 252.0, " ", a.map!(b => b.value).mean));
 
     results.map!(a => a.result).mean.writeln;
-           
-    results.chunkBy!((a,b) => a.date.year == b.date.year && a.date.month == b.date.month)
-           .map!(a => a.count)
-           .mean
-           .writeln;
-    
-    
+
+    results.chunkBy!((a, b) => a.date.year == b.date.year && a.date.month == b
+            .date.month)
+        .map!(a => a.count)
+        .mean
+        .writeln;
+
 }
 
-auto vixStrategy(T) (T market) {
+auto vixStrategy(T)(T market) {
     // VIXY, SPY, SH, IWM, RWM
     auto capital = StartingCapital;
 
-    auto vix = market.find!(a => a.symbol == "VIXY")
-                     .front
-                     .records;
+    auto vix = market.find!(a => a.symbol == "VIXY").front.records;
 
     auto ma = vix.sma!"close"(50).array;
     auto fastma = vix.ema!"close"(5).array;
     //auto fastma = vix.map!(a => a.close).array;
 
-    enum Signal {above, below}
-    auto signals = zip(vix.map!(a => a.time),
-                       fastma,
-                       ma)
-                     .map!(a => tuple!("time","signal")
-                                      (a[0],a[1] < a[2] ? Signal.below : Signal.above))
-                     .chunkBy!((a,b) => a.signal == b.signal)
-                     .filter!(a => a.count > 1)
-                     .map!(a => a.drop(1).front)
-                     .chunkBy!((a,b) => a.signal == b.signal)
-                     .map!(a => a.front)
-                     .array;
+    enum Signal {
+        above,
+        below
+    }
+
+    auto signals = zip(vix.map!(a => a.time), fastma, ma).map!(
+            a => tuple!("time", "signal")(a[0], a[1] < a[2] ? Signal.below : Signal
+            .above))
+        .chunkBy!((a, b) => a.signal == b.signal)
+        .filter!(a => a.count > 1)
+        .map!(a => a.drop(1).front)
+        .chunkBy!((a, b) => a.signal == b.signal)
+        .map!(a => a.front)
+        .array;
 
     import std.format : format;
+
     foreach (signal; signals) {
-        writeln (signal.time.toISOString," ",signal.signal," ",
-                    ["SPY","SH","IWM","RWM"].map!(a => format("%s",
-                                                              market.find!(b => b.symbol == a)
-                                                         .front
-                                                         .records
-                                                         .find!(b => b.time == signal.time)
-                                                         .front
-                                                         .close))
-                                            .joiner(" "));
+        writeln(signal.time.toISOString, " ", signal.signal, " ",
+                ["SPY", "SH", "IWM", "RWM"].map!(a => format("%s",
+                    market.find!(b => b.symbol == a)
+                    .front
+                    .records
+                    .find!(b => b.time == signal.time)
+                    .front
+                    .close)).joiner(" "));
     }
 
     double[string] holdings;
@@ -1045,74 +1060,68 @@ auto vixStrategy(T) (T market) {
 
     double[] results;
 
-
     foreach (signal; signals) {
         switch (signal.signal) {
-            default: assert(0);
-            case Signal.above:
-                // sell SPY, buy RWM
-                auto sell = (holdings["SPY"] * market.find!(a => a.symbol == "SPY")
-                                                    .front
-                                                    .records
-                                                    .find!(a => a.time == signal.time)
-                                                    .front
-                                                    .close);
-                if (sell != 0) {
-                    writeln ("SPY: ",(sell - 1000) / 1000.0);
-                    results ~= (sell - 1000) / 1000.0;
-                }
+        default:
+            assert(0);
+        case Signal.above:
+            // sell SPY, buy RWM
+            auto sell = (holdings["SPY"] * market.find!(a => a.symbol == "SPY")
+                    .front
+                    .records
+                    .find!(a => a.time == signal.time)
+                    .front
+                    .close);
+            if (sell != 0) {
+                writeln("SPY: ", (sell - 1000) / 1000.0);
+                results ~= (sell - 1000) / 1000.0;
+            }
 
-                capital += sell;
-                holdings["SPY"] = 0;
+            capital += sell;
+            holdings["SPY"] = 0;
 
-                auto buyAmount = 1000.0 / market.find!(a => a.symbol == "IWM")
-                                                .front
-                                                .records
-                                                .find!(a => a.time == signal.time)
-                                                .front
-                                                .close;
-                capital -= 1000;
-                holdings["IWM"] = buyAmount;
-                break;
-            case Signal.below:
-                // sell RWM, buy SPY
-                auto sell = (holdings["IWM"] * market.find!(a => a.symbol == "IWM")
-                                                    .front
-                                                    .records
-                                                    .find!(a => a.time == signal.time)
-                                                    .front
-                                                    .close);
+            auto buyAmount = 1000.0 / market.find!(a => a.symbol == "IWM")
+                .front
+                .records
+                .find!(a => a.time == signal.time)
+                .front
+                .close;
+            capital -= 1000;
+            holdings["IWM"] = buyAmount;
+            break;
+        case Signal.below:
+            // sell RWM, buy SPY
+            auto sell = (holdings["IWM"] * market.find!(a => a.symbol == "IWM")
+                    .front
+                    .records
+                    .find!(a => a.time == signal.time)
+                    .front
+                    .close);
 
-                if (sell != 0) {
-                    writeln ("IWM: ",(sell - 1000) / 1000.0);
-                    results ~= (sell - 1000) / 1000.0;
-                }
-                capital += sell;
-                holdings["IWM"] = 0;
+            if (sell != 0) {
+                writeln("IWM: ", (sell - 1000) / 1000.0);
+                results ~= (sell - 1000) / 1000.0;
+            }
+            capital += sell;
+            holdings["IWM"] = 0;
 
-                auto buyAmount = 1000.0 / market.find!(a => a.symbol == "SPY")
-                                                .front
-                                                .records
-                                                .find!(a => a.time == signal.time)
-                                                .front
-                                                .close;
-                capital -= 1000;
-                holdings["SPY"] = buyAmount;
-                break;
+            auto buyAmount = 1000.0 / market.find!(a => a.symbol == "SPY")
+                .front
+                .records
+                .find!(a => a.time == signal.time)
+                .front
+                .close;
+            capital -= 1000;
+            holdings["SPY"] = buyAmount;
+            break;
         }
     }
     capital.writeln;
-    writeln ("SPY: ",holdings["SPY"] * market.find!(a => a.symbol == "SPY")
-                                             .front
-                                             .records
-                                             .back
-                                             .close);
+    writeln("SPY: ", holdings["SPY"] * market.find!(a => a.symbol == "SPY")
+            .front.records.back.close);
 
-    writeln ("IWM: ",holdings["IWM"] * market.find!(a => a.symbol == "IWM")
-                                             .front
-                                             .records
-                                             .back
-                                             .close);
+    writeln("IWM: ", holdings["IWM"] * market.find!(a => a.symbol == "IWM")
+            .front.records.back.close);
 
     results.count.writeln;
     results.mean.writeln;
@@ -1120,63 +1129,69 @@ auto vixStrategy(T) (T market) {
     return signals;
 }
 
-auto fullMACDWithRSIWithSharpe(T,S) (T market, S fastAverage, S slowAverage, S signal, S rsi, S sharpeRatios, DateTime start, DateTime end) {
+auto fullMACDWithRSIWithSharpe(T, S)(T market, S fastAverage, S slowAverage,
+        S signal, S rsi, S sharpeRatios, DateTime start, DateTime end) {
     auto capital = StartingCapital;
 
     ExecutedTrade[string] holdings;
     ExecutedTrade[] rvalue;
 
-    auto macdToSignal(A,B) (A symbol, B time) {
+    auto macdToSignal(A, B)(A symbol, B time) {
         auto macd = fastAverage[symbol][time] - slowAverage[symbol][time];
         auto signal = signal[symbol][time];
 
-        if (macd > signal && rsi[symbol].get(time,9999) < 40) return Action.buy;
-        if (macd < signal && rsi[symbol].get(time,0) > 60) return Action.sell;
+        if (macd > signal && rsi[symbol].get(time, 9999) < 40)
+            return Action.buy;
+        if (macd < signal && rsi[symbol].get(time, 0) > 60)
+            return Action.sell;
 
         return Action.none;
     }
 
     auto trades = market.map!(a => a.records
-                                    .map!(b => Trade(b.time,b.close,macdToSignal(a.symbol,b.time)))
-                                    .filter!(a => a.action!=Action.none)
-                                    .filter!(a => a.time >= start &&
-                                                  a.time <= end)
-                                    .array
-                                    .uniq!((a,b) => a.action==b.action)
-                                    .array            
-                                    //.tradify
-                                    .map!(b => tuple!("symbol","tradeSignal")
-                                                     (a.symbol,b))
-                                    .array)
-                        .joiner
-                        .array
-                        .randomShuffle
-                        .sort!((a,b) => a.tradeSignal.time < b.tradeSignal.time)
-                        .chunkBy!((a,b) => a.tradeSignal.time==b.tradeSignal.time);
+            .map!(b => Trade(b.time, b.close, macdToSignal(a.symbol, b.time)))
+            .filter!(a => a.action != Action.none)
+            .filter!(a => a.time >= start && a.time <= end)
+            .array
+            .uniq!((a, b) => a.action == b.action)
+            .array //.tradify
+            .map!(b => tuple!("symbol", "tradeSignal")(a.symbol, b))
+            .array)
+        .joiner
+        .array
+        .randomShuffle
+        .sort!((a, b) => a.tradeSignal.time < b.tradeSignal.time)
+        .chunkBy!((a, b) => a.tradeSignal.time == b.tradeSignal.time);
 
     auto marketSize = sharpeRatios.keys.length;
     auto maxHoldings = 40;
 
     foreach (signals; trades) {
 
-        foreach (sell; signals.filter!(a => a.tradeSignal.action==Action.sell)) {
+        foreach (sell; signals.filter!(a => a.tradeSignal.action == Action.sell)) {
             if (sell.symbol in holdings) {
-                capital += (holdings[sell.symbol].quantity * sell.tradeSignal.price) - Brokerage;
-                rvalue ~= [holdings[sell.symbol], ExecutedTrade(sell.tradeSignal,sell.symbol,holdings[sell.symbol].quantity)];
+                capital += (holdings[sell.symbol].quantity * sell.tradeSignal
+                        .price) - Brokerage;
+                rvalue ~= [
+                    holdings[sell.symbol],
+                    ExecutedTrade(sell.tradeSignal, sell.symbol,
+                            holdings[sell.symbol].quantity)
+                ];
                 holdings.remove(sell.symbol);
-                
+
             }
         }
 
-        foreach (buy; signals.filter!(a => a.tradeSignal.action==Action.buy)
-                             .array
-                             .sort!((a,b) => sharpeRatios[a.symbol].get(a.tradeSignal.time,double.min_normal) >
-                                             sharpeRatios[b.symbol].get(b.tradeSignal.time,double.min_normal))) {
-                            
-            if (capital < TradeSize) break;
+        foreach (buy; signals.filter!(a => a.tradeSignal.action == Action.buy)
+                .array
+                .sort!((a, b) => sharpeRatios[a.symbol].get(a.tradeSignal.time,
+                    double.min_normal) > sharpeRatios[b.symbol].get(
+                    b.tradeSignal.time, double.min_normal))) {
 
-            
-/+          auto sharpeThreshold = sharpeRatios.byValue
+            if (capital < TradeSize)
+                break;
+
+            /+          auto sharpeThreshold = sharpeRatios.byValue
                                                .map!(a => a.get(buy.tradeSignal.time,double.init))
                                                .filter!(a => !a.isNaN)
                                                .array
@@ -1185,37 +1200,41 @@ auto fullMACDWithRSIWithSharpe(T,S) (T market, S fastAverage, S slowAverage, S s
                                                .drop((marketSize*0.2).to!int)
                                                .front; +/
 
-
-            if (buy.symbol in holdings) writeln (buy.symbol," already bought.");
+            if (buy.symbol in holdings)
+                writeln(buy.symbol, " already bought.");
             assert(buy.symbol !in holdings);
 
             auto tradeSize = (capital / (maxHoldings - holdings.byKey.count)) - Brokerage;
             //if (sharpeRatios[buy.symbol].get(buy.tradeSignal.time,double.min_normal) > sharpeThreshold) {
-                //auto tradeSize = ((capital >= TradeSize*2) ? TradeSize : capital) - Brokerage;
-                holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,buy.symbol,(tradeSize - Brokerage) / buy.tradeSignal.price);
-                capital -= Brokerage;
-                capital -= holdings[buy.symbol].quantity * buy.tradeSignal.price;
-                assert (capital >= 0);
+            //auto tradeSize = ((capital >= TradeSize*2) ? TradeSize : capital) - Brokerage;
+            holdings[buy.symbol] = ExecutedTrade(buy.tradeSignal,
+                    buy.symbol, (tradeSize - Brokerage) / buy.tradeSignal.price);
+            capital -= Brokerage;
+            capital -= holdings[buy.symbol].quantity * buy.tradeSignal.price;
+            assert(capital >= 0);
             //}
         }
     }
 
-
-    writeln (((capital+holdings.byValue.map!(a => (a.price*a.quantity)-Brokerage).sum) - StartingCapital) / StartingCapital);
+    writeln(((capital + holdings.byValue.map!(
+            a => (a.price * a.quantity) - Brokerage).sum) - StartingCapital) / StartingCapital);
     {
-        auto file = File("signals.csv","w");
-        file.writeln ("name,time,price,rsi,sharpe,action");
-        foreach (trade; chain(holdings.byValue,rvalue)) {
-            file.writeln (trade.symbol,",",trade.time.toISOExtString
-                                                     .splitter("T")
-                                                     .front
-                                                     .replace("-","/")
-                                                     .to!string,",",trade.price,",",rsi[trade.symbol][trade.time],",",sharpeRatios[trade.symbol][trade.time],",",trade.action);
+        auto file = File("signals.csv", "w");
+        file.writeln("name,time,price,rsi,sharpe,action");
+        foreach (trade; chain(holdings.byValue, rvalue)) {
+            file.writeln(trade.symbol, ",",
+                    trade.time.toISOExtString.splitter("T")
+                    .front.replace("-", "/").to!string, ",",
+                    trade.price, ",", rsi[trade.symbol][trade.time],
+                    ",", sharpeRatios[trade.symbol][trade.time], ",", trade
+                    .action);
 
         }
     }
 
-    return tuple(((capital+holdings.byValue.map!(a => (a.price*a.quantity)-Brokerage).sum) - StartingCapital) / StartingCapital,rvalue);
+    return tuple(((capital + holdings.byValue.map!(
+            a => (a.price * a.quantity) - Brokerage).sum) - StartingCapital) / StartingCapital,
+            rvalue);
 }
 
 void loadDatabase() {
@@ -1223,33 +1242,28 @@ void loadDatabase() {
     import std.file : dirEntries, SpanMode, readText;
     import std.json : parseJSON;
     import std.path : baseName, stripExtension;
-    
+
     auto db = Database("/home/jordan/databases/tiingo-eod.db");
-    auto statement = db.prepare ("insert into eod
+    auto statement = db.prepare("insert into eod
                                   values (:symbol, :date, :close, :high, :low, :open, :volumn,
                                           :adjClose, :adjHigh, :adjLow, :adjOpen, :adjVolumn,
                                           :divCash, :splitFactor)");
 
     db.begin;
-    foreach (entry; dirEntries (`/mnt/g/tiingo`,SpanMode.shallow)) {
+    foreach (entry; dirEntries(`/mnt/g/tiingo`, SpanMode.shallow)) {
         entry.name.writeln;
         try {
             auto json = entry.name.readText.parseJSON;
             foreach (obj; json.array) {
-                statement.inject (entry.name.stripExtension.baseName,
-                                  obj["date"].str,
-                                  obj["close"].floating,
-                                  obj["high"].floating,
-                                  obj["low"].floating,
-                                  obj["open"].floating,
-                                  obj["volume"].integer,
-                                  obj["adjClose"].floating,
-                                  obj["adjHigh"].floating,
-                                  obj["adjLow"].floating,
-                                  obj["adjOpen"].floating,
-                                  obj["adjVolume"].integer,
-                                  obj["divCash"].floating,
-                                  obj["splitFactor"].floating);
+                statement.inject(entry.name.stripExtension.baseName,
+                        obj["date"].str,
+                        obj["close"].floating, obj["high"].floating,
+                        obj["low"].floating,
+                        obj["open"].floating, obj["volume"].integer,
+                        obj["adjClose"].floating,
+                        obj["adjHigh"].floating, obj["adjLow"].floating,
+                        obj["adjOpen"].floating, obj["adjVolume"].integer,
+                        obj["divCash"].floating, obj["splitFactor"].floating);
             }
         } catch (Exception ex) {
             ex.msg.writeln;
@@ -1258,67 +1272,62 @@ void loadDatabase() {
     db.commit;
 }
 
-
-auto predictDividendDates(T) (T db, int num=50) {
+auto predictDividendDates(T)(T db, int num = 50) {
     import std.datetime.systime : SysTime, Clock;
     import core.time : dur;
+
     auto data = db.execute("select symbol, date from eod where date(date) > date('2019-01-01') and divCash > 0")
-                  .map!(a => tuple!("symbol","date")
-                                   (a["symbol"].as!string,
-                                    Date.fromISOExtString(a["date"].as!string[0..10])))
-                  .map!(a => tuple!("symbol","date","predicted")
-                                   (a.symbol,a.date,(a.date + dur!"days"(365))))
-                  .array;
+        .map!(a => tuple!("symbol", "date")(a["symbol"].as!string,
+                Date.fromISOExtString(a["date"].as!string[0 .. 10])))
+        .map!(a => tuple!("symbol", "date", "predicted")(a.symbol,
+                a.date, (a.date + dur!"days"(365))))
+        .array;
 
     auto currentTime = Clock.currTime.to!Date;
-    
+
     return data.filter!(a => a.predicted > (currentTime - dur!"days"(2)))
-               .array
-               .sort!((a,b) => a.predicted < b.predicted)
-               .take(num)
-               .array;
-                                             
+        .array
+        .sort!((a, b) => a.predicted < b.predicted)
+        .take(num).array;
+
 }
 
-auto timeBetweenPayouts(T) (T db) {
+auto timeBetweenPayouts(T)(T db) {
     import std.datetime.systime : SysTime, Clock;
     import core.time : dur;
+
     auto data = db.execute("select symbol, date from eod where divCash > 0")
-                  .map!(a => tuple!("symbol","date")
-                                   (a["symbol"].as!string,
-                                    Date.fromISOExtString(a["date"].as!string[0..10])))
-                  .array
-                  .multiSort!((a,b) => a.symbol < b.symbol, (a,b) => a.date < b.date)
-                  .chunkBy!((a,b) => a.symbol == b.symbol)
-                  .filter!(a => a.count > 1)
-                  .map!(a => tuple!("symbol","period")
-                                   (a.front.symbol,
-                                    a.slide(2)
-                                     .map!(b => (b.drop(1).front.date  - 
-                                                 b.front.date).total!"days")
-                                     .mean))
-                  .array;
-    
+        .map!(a => tuple!("symbol",
+                "date")(a["symbol"].as!string,
+                Date.fromISOExtString(a["date"].as!string[0 .. 10])))
+        .array
+        .multiSort!((a, b) => a.symbol < b.symbol, (a, b) => a.date < b.date)
+        .chunkBy!((a, b) => a.symbol == b.symbol)
+        .filter!(a => a.count > 1)
+        .map!(a => tuple!("symbol", "period")(a.front.symbol,
+                a.slide(2).map!(b => (b.drop(1)
+                .front.date - b.front.date).total!"days").mean))
+        .array;
+
     return data;
 }
 
-auto getRecords(T, Rng) (T db, Rng symbols) {
+auto getRecords(T, Rng)(T db, Rng symbols) {
     import std.format : format;
+
     Records2[] rvalue;
     foreach (symbol; symbols) {
         rvalue ~= Records2(symbol,
-                              db.execute(format("select * from eod where symbol = '%s'",symbol))
-                                .map!(a => 
-                                          EODRecord2 (DateTime.fromISOExtString(a["date"].as!string[0..19]),
-                                                      a["adjOpen"].as!double,
-                                                      a["adjHigh"].as!double,
-                                                      a["adjLow"].as!double,
-                                                      a["adjClose"].as!double,
-                                                      a["adjVolumn"].as!size_t,
-                                                      a["divCash"].as!double / a["close"].as!double))
-                                .array
-                                .sort!((a,b) => a.time < b.time)
-                                .array);
+                db.execute(format("select * from eod where symbol = '%s'",
+                    symbol)).map!(a => EODRecord2(DateTime.fromISOExtString(
+                    a["date"].as!string[0 .. 19]), a["adjOpen"].as!double,
+                    a["adjHigh"].as!double,
+                    a["adjLow"].as!double, a["adjClose"].as!double,
+                    a["adjVolumn"].as!size_t,
+                    a["divCash"].as!double / a["close"].as!double))
+                .array
+                .sort!((a, b) => a.time < b.time)
+                .array);
     }
     return rvalue;
 }
@@ -1327,40 +1336,31 @@ void main(string[] args) {
     import d2sqlite3;
     import std.format : format;
     import std.string : center;
+
     Database db;
 
-    writeln ("loading");
+    writeln("loading");
     db = Database("/home/jordan/databases/tiingo-eod.db");
 
-    auto divPeriods = db.timeBetweenPayouts
-                        .assocArray;
+    auto divPeriods = db.timeBetweenPayouts.assocArray;
 
     auto divDates = db.predictDividendDates(100);
-    auto divRecords = db.getRecords (divDates.map!(a => a.symbol));
-    auto stats = divRecords.map!(a => tuple(a.symbol.center(6,' '),
-                                            divDates.find!(b => b.symbol == a.symbol).front.predicted,
-                                            a.records.ema!"divReturn"(20).array.back*100,
-                                            a.records.rsi!"close"(14).back,
-                                            divPeriods.get(a.symbol,-1)))
-                           .array
-                           .sort!((a,b) => a[4] > b[4])
-                           .each!(a => writeln(format("%s %s %0.6f %0.6f %f",
-                                                      a[0],
-                                                      a[1],
-                                                      a[2],
-                                                      a[3],
-                                                      a[4])));
-
+    auto divRecords = db.getRecords(divDates.map!(a => a.symbol));
+    auto stats = divRecords.map!(a => tuple(a.symbol.center(6, ' '),
+            divDates.find!(b => b.symbol == a.symbol).front.predicted,
+            a.records.ema!"divReturn"(20).array.back * 100,
+            a.records.rsi!"close"(14).back, divPeriods.get(a.symbol, -1)))
+        .array
+        .sort!((a, b) => a[4] > b[4])
+        .each!(a => writeln(format("%s %s %0.6f %0.6f %f", a[0], a[1], a[2], a[3],
+                a[4])));
 
     return;
 
-    auto cmdline = new Program("stocky")
-                        .summary("Stock Analyser")
-                        .author("Jordan K. Wilson <wilsonjord@gmail.com>")
-                        .add(new Option(null,"list","List of symbols to use")
-                                .acceptsFiles)
-                        .parse(args);
-
+    auto cmdline = new Program("stocky").summary("Stock Analyser")
+        .author("Jordan K. Wilson <wilsonjord@gmail.com>")
+        .add(new Option(null,
+                "list", "List of symbols to use").acceptsFiles).parse(args);
 
     //loadDatabase;
     //return;
@@ -1368,89 +1368,78 @@ void main(string[] args) {
     //import selector;
     //moneyManagement("signals-bollinger - Copy.csv",PickStrategy.weightedReturnsAll);
     //returnOverTime("signals-bollinger.csv",fastAverage,slowAverage);
-    
+
     //return;
 
-    
+    writeln("Loading database...");
 
-    writeln ("Loading database...");
-    
     Records[] market;
 
-    
-    auto symbols = (cmdline.option("list") is null) ?
-                     db.execute("select symbol from symbols")
-                       .map!(a => a["symbol"].as!string)
-                       //.filter!(a => a == "SNN")
-                       .array
-                       .randomCover
-                       .take(500)
-                       .array :
-                     File(cmdline.option("list"),"r") // no header
-                       .byLine
-                       .map!(a => a.to!string)
-                       .filter!(a => !a.empty)
-                       .array;
+    auto symbols = (cmdline.option("list") is null) ? db.execute(
+            "select symbol from symbols")
+        .map!(a => a["symbol"].as!string) //.filter!(a => a == "SNN")
+        .array.randomCover.take(500).array : File(cmdline.option("list"), "r") // no header
+        .byLine
+        .map!(a => a.to!string)
+        .filter!(a => !a.empty)
+        .array;
 
     foreach (symbol; symbols) {
         symbol.writeln;
         import std.format : format;
+
         market ~= Records(symbol,
-                          db.execute(format("select * from eod where symbol = '%s'",symbol))
-                            .map!(a => 
-                                      EODRecord (DateTime.fromISOExtString(a["date"].as!string[0..19]),
-                                                 a["adjOpen"].as!double,
-                                                 a["adjHigh"].as!double,
-                                                 a["adjLow"].as!double,
-                                                 a["adjClose"].as!double,
-                                                 a["adjVolumn"].as!size_t))
-                            .array
-                            .sort!((a,b) => a.time < b.time)
-                            .array);
+                db.execute(format("select * from eod where symbol = '%s'",
+                    symbol)).map!(a => EODRecord(DateTime.fromISOExtString(
+                    a["date"].as!string[0 .. 19]), a["adjOpen"].as!double,
+                    a["adjHigh"].as!double,
+                    a["adjLow"].as!double, a["adjClose"].as!double,
+                    a["adjVolumn"].as!size_t))
+                .array
+                .sort!((a, b) => a.time < b.time)
+                .array);
 
     }
 
     // adhoc
     {
-        foreach (pair; [//tuple("RSI2",market.rsi2Strategy),
-                                    //tuple("RSI25",market.rsi25Strategy),
-                                    //tuple("RSI10",market.rsi10Strategy),
-                                 tuple("EMA4/16",market.emaTrendStrategy(4,16,500)),
-                                 tuple("EMA8/32",market.emaTrendStrategy(8,32,500)),
-                                 //tuple("EMA16/64",market.emaTrendStrategy(16,64)),
-                                    //tuple("ALL",market.emaTrendStrategy(8,32) ~ market.emaTrendStrategy(16,64) ~ market.rsi25Strategy ~ market.rsi2Strategy ~ market.rsi10Strategy)]) {
-                                ]) {
-        
+        foreach (pair; [ //tuple("RSI2",market.rsi2Strategy),
+                //tuple("RSI25",market.rsi25Strategy),
+                //tuple("RSI10",market.rsi10Strategy),
+                tuple("EMA4/16", market.emaTrendStrategy(4, 16,
+                    500)),
+                tuple("EMA8/32", market.emaTrendStrategy(8, 32, 500)),
+                //tuple("EMA16/64",market.emaTrendStrategy(16,64)),
+                //tuple("ALL",market.emaTrendStrategy(8,32) ~ market.emaTrendStrategy(16,64) ~ market.rsi25Strategy ~ market.rsi2Strategy ~ market.rsi10Strategy)]) {
+            ]) {
+
             pair[0].writeln;
             auto results = pair[1];
-            
+
             //results = results.filter!(a => a.symbol != "LQD" && a.symbol != "HYG").array;
             results = results.filter!(a => a.start.year >= 2019).array;
 
-            results = results.multiSort!((a,b) => a.start < b.start,
-                                         (a,b) => a.symbol < b.symbol)
-                             .uniq!((a,b) => a.start == b.start &&
-                                              a.symbol == b.symbol)
-                             .array;
+            results = results.multiSort!((a, b) => a.start < b.start,
+                    (a, b) => a.symbol < b.symbol)
+                .uniq!((a, b) => a.start == b.start && a.symbol == b.symbol)
+                .array;
 
-            results.sort!((a,b) => a.symbol < b.symbol)
-               .chunkBy!((a,b) => a.symbol == b.symbol)
-               .each!(a => writeln (a.front.symbol," ",
-                                    a.map!(b => b.held).mean," ",
-                                    a.map!(b => b.result).mean," ",
-                                    a.map!(b => b.result).minElement," ",
-                                    a.map!(b => b.result).maxElement," ",
-                                    a.count!(b => b.result > 0) / a.count.to!double));
-            
+            results.sort!((a, b) => a.symbol < b.symbol)
+                .chunkBy!((a, b) => a.symbol == b.symbol)
+                .each!(a => writeln(a.front.symbol, " ",
+                        a.map!(b => b.held).mean, " ", a.map!(b => b.result)
+                        .mean, " ", a.map!(b => b.result).minElement,
+                        " ", a.map!(b => b.result).maxElement, " ",
+                        a.count!(b => b.result > 0) / a.count.to!double));
 
             results.map!(a => a.result).mean.writeln;
-               
-            
-            results.sort!((a,b) => a.date < b.date)
-                   .chunkBy!((a,b) => a.date.year == b.date.year && a.date.month == b.date.month)
-                   .map!(a => a.count)
-                   .mean
-                   .writeln;
+
+            results.sort!((a, b) => a.date < b.date)
+                .chunkBy!((a, b) => a.date.year == b.date.year
+                        && a.date.month == b.date.month)
+                .map!(a => a.count)
+                .mean
+                .writeln;
             results.count.writeln;
 
             results.retro.take(10).each!(a => a.writeln);
@@ -1460,85 +1449,78 @@ void main(string[] args) {
     }
     return;
     //{
-        //auto results = market.vixStrategy;
-        //results.each!(a => a.writeln);
+    //auto results = market.vixStrategy;
+    //results.each!(a => a.writeln);
     //}
 
     //return;
 
     //{
-        //auto players = market.map!(a => a.symbol);
-        //double[string][DateTime] prices;
+    //auto players = market.map!(a => a.symbol);
+    //double[string][DateTime] prices;
 
-        //auto file = File ("results.csv","w");
-        //file.writeln ("week,stock1,stock2,winner");
-        //foreach (symbol; market) {
-            //foreach (day; symbol.records) {
-                //prices[day.time][symbol.symbol] = day.close;
-            //}
-        //}
+    //auto file = File ("results.csv","w");
+    //file.writeln ("week,stock1,stock2,winner");
+    //foreach (symbol; market) {
+    //foreach (day; symbol.records) {
+    //prices[day.time][symbol.symbol] = day.close;
+    //}
+    //}
 
-        
-        //foreach (dateRange; prices.keys
-                                  //.sort!((a,b) => a < b)
-                                  //.slide!(No.withPartial)(2)) {
+    //foreach (dateRange; prices.keys
+    //.sort!((a,b) => a < b)
+    //.slide!(No.withPartial)(2)) {
 
-            //auto previousDate = dateRange[0];
-            //auto date = dateRange[1];
-            //if (prices[date].byKey.count >= 2) {
-                //auto matchups = cartesianProduct (prices[date].byKey,prices[date].byKey)
-                                    //.map!(a => (a[0] > a[1]) ? tuple!(string,string)(a[1],a[0]) : a)
-                                    //.filter!(a => a[0] != a[1])
-                                    //.array
-                                    //.multiSort!((a,b) => a[0] < b[0], (a,b) => a[1] < b[1])
-                                    //.uniq
-                                    //.filter!(a => a[0] in prices[previousDate] &&
-                                                  //a[1] in prices[previousDate])
-                                    //;
-                                    
-                //foreach (match; matchups) {
-                    //auto p1Return = (prices[date][match[0]] - prices[previousDate][match[0]]) / prices[previousDate][match[0]];
-                    //auto p2Return = (prices[date][match[1]] - prices[previousDate][match[1]]) / prices[previousDate][match[1]];
-                    //file.writeln (date.year*100 + date.month,",",match[0],",",match[1],",",(p1Return > p2Return) ? 1 : ((p1Return == p2Return) ? 0.5 : 0));
-                //}
-            //}
-        //}
+    //auto previousDate = dateRange[0];
+    //auto date = dateRange[1];
+    //if (prices[date].byKey.count >= 2) {
+    //auto matchups = cartesianProduct (prices[date].byKey,prices[date].byKey)
+    //.map!(a => (a[0] > a[1]) ? tuple!(string,string)(a[1],a[0]) : a)
+    //.filter!(a => a[0] != a[1])
+    //.array
+    //.multiSort!((a,b) => a[0] < b[0], (a,b) => a[1] < b[1])
+    //.uniq
+    //.filter!(a => a[0] in prices[previousDate] &&
+    //a[1] in prices[previousDate])
+    //;
 
-        
+    //foreach (match; matchups) {
+    //auto p1Return = (prices[date][match[0]] - prices[previousDate][match[0]]) / prices[previousDate][match[0]];
+    //auto p2Return = (prices[date][match[1]] - prices[previousDate][match[1]]) / prices[previousDate][match[1]];
+    //file.writeln (date.year*100 + date.month,",",match[0],",",match[1],",",(p1Return > p2Return) ? 1 : ((p1Return == p2Return) ? 0.5 : 0));
+    //}
+    //}
+    //}
+
     //}
 
     //return;
 
+    //  auto currentSymbol="";
+    //  auto market = db.execute("select * from eod order by symbol, date")
+    //                  .tee!((a) {
+    //                              if (a["symbol"].as!string != currentSymbol) {
+    //                                      currentSymbol = a["symbol"].as!string;
+    //                                      currentSymbol.writeln;
+    //                              }
+    //                            })
+    //                  .map!(a => tuple!("symbol","record")
+    //                                   (a["symbol"].as!string,
+    //                                    EODRecord (DateTime.fromISOExtString(a["date"].as!string[0..19]),
+    //                                               a["adjOpen"].as!double,
+    //                                               a["adjHigh"].as!double,
+    //                                               a["adjLow"].as!double,
+    //                                               a["adjClose"].as!double,
+    //                                               a["adjVolumn"].as!int)))
+    //                  .array
+    //                  //.multiSort!((a,b) => a.symbol < b.symbol, (a,b) => a.record.time < b.record.time)
+    //                  .sort!((a,b) => a.symbol < b.symbol)
+    //                  .chunkBy!((a,b) => a.symbol == b.symbol)
+    //                  .map!(a => tuple!("symbol","records")
+    //                                   (a.front.symbol, a.map!(b => b.record).array))
+    //                  .array;
 
-
-//  auto currentSymbol="";
-//  auto market = db.execute("select * from eod order by symbol, date")
-//                  .tee!((a) {
-//                              if (a["symbol"].as!string != currentSymbol) {
-//                                      currentSymbol = a["symbol"].as!string;
-//                                      currentSymbol.writeln;
-//                              }
-//                            })
-//                  .map!(a => tuple!("symbol","record")
-//                                   (a["symbol"].as!string,
-//                                    EODRecord (DateTime.fromISOExtString(a["date"].as!string[0..19]),
-//                                               a["adjOpen"].as!double,
-//                                               a["adjHigh"].as!double,
-//                                               a["adjLow"].as!double,
-//                                               a["adjClose"].as!double,
-//                                               a["adjVolumn"].as!int)))
-//                  .array
-//                  //.multiSort!((a,b) => a.symbol < b.symbol, (a,b) => a.record.time < b.record.time)
-//                  .sort!((a,b) => a.symbol < b.symbol)
-//                  .chunkBy!((a,b) => a.symbol == b.symbol)
-//                  .map!(a => tuple!("symbol","records")
-//                                   (a.front.symbol, a.map!(b => b.record).array))
-//                  .array;
-
-
-
-    
-    writeln ("generating moving averages");
+    writeln("generating moving averages");
     double[DateTime][string] fastAverage;
     double[DateTime][string] slowAverage;
     double[DateTime][string] signal;
@@ -1546,9 +1528,9 @@ void main(string[] args) {
     foreach (stock; market) {
         auto fast = stock.records.ema!"close"(50).array;
         auto slow = stock.records.sma!"close"(100).array;
-        auto _signal = zip(fast,slow).map!(a => a[0] - a[1]).ema(9).array;
+        auto _signal = zip(fast, slow).map!(a => a[0] - a[1]).ema(9).array;
         auto _rsi = stock.records.rsi!"close"(14).array;
-        foreach (avg; zip(stock.records.map!(a => a.time),fast,slow,_signal,_rsi)) {
+        foreach (avg; zip(stock.records.map!(a => a.time), fast, slow, _signal, _rsi)) {
             fastAverage[stock.symbol][avg[0]] = avg[1];
             slowAverage[stock.symbol][avg[0]] = avg[2];
             signal[stock.symbol][avg[0]] = avg[3];
@@ -1556,44 +1538,40 @@ void main(string[] args) {
         }
     }
 
-    
-
-
-
-    scope(exit) {
+    scope (exit) {
         //TA_Shutdown;
     }
     //TA_Initialize;
 
     alias Trades = Trade[];
 
-    
-    
-    writeln ("generating ratios");
+    writeln("generating ratios");
 
     double[DateTime][string] sharpeRatios;
 
-    
     Band[DateTime][string] bollingerBands;
 
     foreach (stock; market) {
-        foreach (ratio; zip(stock.records.map!(a => a.time),stock.records.sharpeRatio!"close"(20))) {
-            if (!ratio[1].isNaN) sharpeRatios[stock.symbol][ratio[0]] = ratio[1];
+        foreach (ratio; zip(stock.records.map!(a => a.time),
+                stock.records.sharpeRatio!"close"(20))) {
+            if (!ratio[1].isNaN)
+                sharpeRatios[stock.symbol][ratio[0]] = ratio[1];
         }
 
-        foreach (dev; zip(stock.records.map!(a => a.time), stock.records.sma!"close"(10),stock.records.stdDeviation!"close"(10))) {
-            if (!dev[1].isNaN && !dev[2].isNaN) 
-                bollingerBands[stock.symbol][dev[0]] = Band(dev[1]+1.5*dev[2],dev[1]-1.5*dev[2]);
+        foreach (dev; zip(stock.records.map!(a => a.time),
+                stock.records.sma!"close"(10), stock.records.stdDeviation!"close"(
+                10))) {
+            if (!dev[1].isNaN && !dev[2].isNaN)
+                bollingerBands[stock.symbol][dev[0]] = Band(
+                        dev[1] + 1.5 * dev[2], dev[1] - 1.5 * dev[2]);
         }
     }
 
-    writeln ("done");
-
-    
-
+    writeln("done");
 
     // REALTIME
-    auto x = market.fullMACDWithRSIWithSharpe(fastAverage,slowAverage,signal,rsi,sharpeRatios,DateTime(2017,1,1),DateTime(2020,1,1));
+    auto x = market.fullMACDWithRSIWithSharpe(fastAverage, slowAverage, signal,
+            rsi, sharpeRatios, DateTime(2017, 1, 1), DateTime(2020, 1, 1));
     //auto x = market.bollingerBandsWithRSI(bollingerBands,rsi,sharpeRatios, StartTime,EndTime);
     x[0].writeln;
     x[1].results.mean.writeln;
@@ -1601,27 +1579,22 @@ void main(string[] args) {
     auto y = x[1].results.array.sort.array.drop(20).dropBack(20);
     y.mean.writeln;
 
-    
     import selector;
+
     selected("signals-bollinger.csv");
 
-    
     return;
-    
-    
 
     // SIMULATION
-    market.benchmark (StartTime,EndTime).writeln;
+    market.benchmark(StartTime, EndTime).writeln;
     //market.longOnlyMACD(fastAverage,slowAverage,sharpeRatios,StartTime,EndTime);
     //market.longOnlyMACD(fastAverage,slowAverage,sharpeRatios,StartTime,EndTime);
     //market.longOnlyMACD(fastAverage,slowAverage,sharpeRatios,StartTime,EndTime);
     //return; 
-    
-    
+
     writeln;
 
-
-/+  {
+    /+  {
         /+ auto results = generate!(() => market.maWithLookback(300,30,StartTime,EndTime)).take(100)
                                 .map!(a => tuple(a[0],a[1].results))
                                 .array; +/
@@ -1662,7 +1635,7 @@ void main(string[] args) {
         //trade.map!(a => a[1]).joiner.array.sort!((a,b) => a.time < b.time).chunkBy!((a,b) => a.time.year==b.time.year).map!(a => a.count).mean.writeln;
         
     } +/
-    
+
     /+ double[string] tmp;
     foreach (records; allRecords) {
         //records.records.maWithLookback(200,20).writeln;
@@ -1676,7 +1649,7 @@ void main(string[] args) {
     // buy when close is above n-day average, sell when below
     // with lookback
 
-/+  alias SimResult = Tuple!(uint,"tradesPerYear",
+    /+  alias SimResult = Tuple!(uint,"tradesPerYear",
                              double,"returnPerTrade",
                              double,"profitPerTrade",
                              double,"avgDaysHeld");
@@ -1718,7 +1691,7 @@ void main(string[] args) {
     }
     return; +/
 
-/+  auto records = `G:\tiingo\JNJ.json`.readJsonTiingo
+    /+  auto records = `G:\tiingo\JNJ.json`.readJsonTiingo
                                        .array;
                                     
     auto train = records.filter!(a => a.time < EndTime && a.time > StartTime).array;
