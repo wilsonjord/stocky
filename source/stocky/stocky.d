@@ -117,7 +117,7 @@ auto readJson (string fileName) {
     import std.json : parseJSON;
     import std.datetime.date : Date;
     import std.typecons : tuple;
-    
+
 
     auto json = fileName.readText.parseJSON;
     return json["history"].object
@@ -152,10 +152,10 @@ auto annualVolatility(string field="", Range) (Range rng,RecordSeriesType type =
     auto myRng = rng.convertRange!field;
     auto numPeriods = (type==RecordSeriesType.daily) ? AnnualTradingDays : 12;
 
-    return 
+    return
         myRng.slide!(No.withPartial)(2)
 			 .map!(a => logReturn(a.front,a.drop(1).front))
-			 .stdev * sqrt(numPeriods.to!double);		
+			 .stdev * sqrt(numPeriods.to!double);
 }
 
 unittest {
@@ -165,9 +165,9 @@ unittest {
 }
 
 auto volatility(T) (T records) {
-    
+
 	auto numRecords=0;
-	auto volatility = 
+	auto volatility =
 		records.slide!(No.withPartial)(2)
 			.map!(a => tuple!("time","dailyReturn")(a[1].time,a[1].close/a[0].close - 1))
 			.filter!(a => a.time.year >= 2016)
@@ -190,7 +190,7 @@ auto dailyReturns(string field="", Range) (Range rng) {
 
 auto stdDeviation(string field="", Range) (Range rng, size_t period) {
     auto myRng = rng.convertRange!field;
-    
+
     return chain(repeat(double.nan,period-1),
                  myRng.slide!(No.withPartial)(period)
                       .map!(a => a.stdev));
@@ -198,7 +198,7 @@ auto stdDeviation(string field="", Range) (Range rng, size_t period) {
 
 auto sharpeRatio(string field="", Range) (Range rng, size_t period) {
     auto myRng = rng.convertRange!field;
-    
+
     return chain(repeat(double.nan,period-1),
                  myRng.dailyReturns
                       .slide!(No.withPartial)(period)
@@ -481,7 +481,7 @@ unittest {
     assert (close.ema(26).take(25).all!(a => a.isNaN));
     assert (!close.ema(26).drop(25).front.isNaN);
     close.ema(26).drop(25).map!(a => format("%0.5f",a)).writeln;
-    
+
     assert (close.ema(26).drop(25).map!(a => format("%0.5f",a)).equal(
         [27.2869230769231,27.3064102564103,27.3474169040836,27.3868675037811,27.4345069479455,
                27.4793582851347,27.5186650788284,27.5580232211374,27.5811326121643,27.5743820483002,
@@ -490,7 +490,7 @@ unittest {
                27.7846647145367,27.7909858467932,27.7998017099937,27.8087052870312,27.83324563614]
                .map!(a => format("%0.5f",a))));
 
-    
+
     assert (zip(close.ema(26,27.62).take(5),[27.62,27.59259259,27.52943759,27.46725702,27.39931206])
                 .all!(a => feqrel(a[0],a[1]) > 11));
 
@@ -789,7 +789,7 @@ auto daysHeld(T) (in T trades) pure {
 auto daysHeld2(T) (in T trades) pure {
     return trades.chunks(2)
                  .map!(a => (a[1].time - a[0].time).total!"days");
-                 
+
 }
 
 ///
@@ -1352,7 +1352,7 @@ auto tradeAction(T) (T data, string ignore="No") { // TODO investigate adding no
 auto simulatedPrice (double price, double mu, double sigma, RecordSeriesType type=RecordSeriesType.daily) {
     import dstats : rNormal;
     import std.math : exp, pow, sqrt;
- 
+
     auto numPeriods = (type==RecordSeriesType.daily) ? AnnualTradingDays : 12;
 
     return price*exp ((mu - (pow(sigma,2)/2))*(1/numPeriods.to!double) + (sigma/sqrt(numPeriods.to!double))*rNormal(0,1));
